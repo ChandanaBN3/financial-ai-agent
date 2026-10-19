@@ -1,0 +1,31 @@
+{
+  "name": "financial-ai-agent",
+  "version": "1.0.0",
+  "description": "Agentic AI-Based Smart Financial Advisory and Fraud Detection System (Project 418)",
+  "private": true,
+  "scripts": {
+    "setup": "npm install && npm run install:all",
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "start": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm --prefix server start\" \"npm --prefix client preview\"",
+    "start:server": "npm --prefix server start",
+    "start:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "test": "npm --prefix server test",
+    "test:watch": "npm --prefix server run test:watch"
+  },
+  "keywords": [
+    "agentic-ai",
+    "financial-advisory",
+    "fraud-detection",
+    "multi-agent",
+    "india-fintech",
+    "inr",
+    "college-project"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
