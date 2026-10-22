@@ -67,11 +67,11 @@ export default function KnowledgeBaseView() {
               <span className="badge badge-info"><BookOpen size={13} /> Verified Local Knowledge</span>
               <span className="badge badge-local">Keyword-Based Retrieval</span>
             </div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a' }}>
               Financial Education Knowledge Base
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Original educational material on Indian budgeting, liquid emergency funds, UPI digital payment safety, and prototype limitations.
+              Original educational material on Indian budgeting, liquid emergency funds, UPI digital payment safety, and smart financial practices.
             </p>
           </div>
         </div>
@@ -131,14 +131,14 @@ export default function KnowledgeBaseView() {
       {searchResults && (
         <div className="card" style={{ borderColor: 'rgba(14, 165, 233, 0.4)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
               🔍 Retrieval Results for: "{searchResults.query}"
             </h2>
             <span className="badge badge-info">{searchResults.count} Matches</span>
           </div>
 
           {searchResults.count === 0 ? (
-            <div style={{ padding: '20px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', color: '#fbbf24', fontSize: '0.9rem' }}>
+            <div style={{ padding: '20px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', color: '#b45309', fontSize: '0.9rem' }}>
               ℹ️ {searchResults.message}
             </div>
           ) : (
@@ -147,19 +147,19 @@ export default function KnowledgeBaseView() {
                 <div 
                   key={r.doc_id}
                   style={{
-                    background: '#0d1322',
+                    background: '#f8fafc',
                     border: '1px solid var(--border-color)',
                     borderRadius: '8px',
                     padding: '16px',
-                    borderLeft: '4px solid #0ea5e9'
+                    borderLeft: '4px solid #0284c7'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>{r.doc_id}</span>
-                      <strong style={{ color: '#fff', fontSize: '0.95rem' }}>{r.title}</strong>
+                      <strong style={{ color: '#0f172a', fontSize: '0.95rem' }}>{r.title}</strong>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 600 }}>
+                    <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: 600 }}>
                       Relevance Score: {r.relevance_score}
                     </span>
                   </div>
@@ -168,7 +168,7 @@ export default function KnowledgeBaseView() {
                     Category: {r.category}
                   </div>
 
-                  <blockquote style={{ fontSize: '0.85rem', color: '#e2e8f0', background: '#070b14', padding: '10px 14px', borderRadius: '6px', borderLeft: '2px solid #38bdf8', fontStyle: 'italic', marginBottom: '10px' }}>
+                  <blockquote style={{ fontSize: '0.85rem', color: '#334155', background: '#f1f5f9', padding: '10px 14px', borderRadius: '6px', borderLeft: '3px solid #0284c7', fontStyle: 'italic', marginBottom: '10px' }}>
                     "{r.snippet}"
                   </blockquote>
 
@@ -193,7 +193,7 @@ export default function KnowledgeBaseView() {
       <div className="grid-3">
         {/* Left Col: Document List */}
         <div className="card">
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff', marginBottom: '14px' }}>
+          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '14px' }}>
             📚 Verified Articles ({docs.length})
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -207,16 +207,16 @@ export default function KnowledgeBaseView() {
                     padding: '12px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: isSelected ? 'rgba(14, 165, 233, 0.12)' : '#0d1322',
-                    border: `1px solid ${isSelected ? '#0ea5e9' : 'var(--border-color)'}`,
+                    background: isSelected ? '#eff6ff' : '#f8fafc',
+                    border: `1px solid ${isSelected ? '#0284c7' : 'var(--border-color)'}`,
                     transition: 'all 0.15s ease'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>{doc.doc_id}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#0284c7', fontFamily: 'var(--font-mono)' }}>{doc.doc_id}</span>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>• {doc.category}</span>
                   </div>
-                  <div style={{ fontWeight: 600, fontSize: '0.86rem', color: isSelected ? '#38bdf8' : '#fff' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.86rem', color: isSelected ? '#0284c7' : '#0f172a' }}>
                     {doc.title}
                   </div>
                 </div>
@@ -233,18 +233,18 @@ export default function KnowledgeBaseView() {
                 <span className="badge badge-info">{selectedDoc.doc_id}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{selectedDoc.category}</span>
               </div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
                 {selectedDoc.title}
               </h2>
 
               <div style={{
-                background: '#0d1322',
+                background: '#f8fafc',
                 border: '1px solid var(--border-color)',
                 borderRadius: '8px',
                 padding: '20px',
                 fontSize: '0.92rem',
                 lineHeight: '1.8',
-                color: '#e2e8f0',
+                color: '#334155',
                 whiteSpace: 'pre-line'
               }}>
                 {selectedDoc.content}
@@ -254,7 +254,7 @@ export default function KnowledgeBaseView() {
                 <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>TAGS:</span>
                   {selectedDoc.tags.split(',').map((t, idx) => (
-                    <span key={idx} style={{ background: '#1e293b', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', color: '#94a3b8' }}>
+                    <span key={idx} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', color: '#475569' }}>
                       #{t.trim()}
                     </span>
                   ))}

@@ -2,12 +2,15 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export const translations = {
   en: {
-    appName: 'MoneyWise',
-    brandTagline: 'Personal Money & Payment Safety',
+    appName: 'FinWise',
+    brandTagline: 'Smart Money & Payment Safety',
     navHome: 'Home',
+    navAgentCenter: 'AI Agent Center',
     navFinances: 'My Finances',
     navCheckPayment: 'Check a Payment',
     navHistory: 'History',
+    navKnowledge: 'Knowledge Base',
+    navArchitecture: 'Architecture & Specs',
     languageLabel: 'Language',
 
     // Home
@@ -23,7 +26,7 @@ export const translations = {
     cardHistoryDesc: 'Review recent transaction risk evaluations you performed in this browser.',
     cardHistoryAction: 'View History',
 
-    howItWorksTitle: 'How MoneyWise Helps You',
+    howItWorksTitle: 'How FinWise Helps You',
     feature1Title: 'Clear Monthly Picture',
     feature1Desc: 'Know exactly how much you spend on necessities and how much you have left over at month end without complex spreadsheets.',
     feature2Title: 'Payment Risk Alert',
@@ -137,17 +140,20 @@ export const translations = {
     // Common
     loading: 'Loading...',
     error: 'An error occurred. Please check your inputs.',
-    footerNote: 'MoneyWise — Simple, private personal finance and payment safety assistant for India.',
+    footerNote: 'FinWise — Simple, private personal finance and payment safety assistant for India.',
     footerDisclaimer: 'Educational tool. Does not replace bank security or official legal advice. National Cyber Crime Helpline: 1930.'
   },
 
   kn: {
-    appName: 'ಮನಿ‌ವೈಸ್',
+    appName: 'ಫಿನ್‌ವೈಸ್',
     brandTagline: 'ವೈಯಕ್ತಿಕ ಹಣಕಾಸು ಮತ್ತು ಪಾವತಿ ಸುರಕ್ಷತೆ',
     navHome: 'ಮುಖಪುಟ',
+    navAgentCenter: 'AI ಏಜೆಂಟ್ ಕೇಂದ್ರ',
     navFinances: 'ನನ್ನ ಹಣಕಾಸು',
     navCheckPayment: 'ಪಾವತಿ ಪರಿಶೀಲಿಸಿ',
     navHistory: 'ಇತಿಹಾಸ',
+    navKnowledge: 'ಜ್ಞಾನ ಭಂಡಾರ',
+    navArchitecture: 'ವಿನ್ಯಾಸ ಮತ್ತು ವಿವರಣೆ',
     languageLabel: 'ಭಾಷೆ',
 
     // Home
@@ -282,12 +288,15 @@ export const translations = {
   },
 
   hi: {
-    appName: 'मनीवाइज़',
+    appName: 'फ़िनवाइज़',
     brandTagline: 'व्यक्तिगत वित्त एवं भुगतान सुरक्षा',
     navHome: 'होम',
+    navAgentCenter: 'AI एजेंट केंद्र',
     navFinances: 'मेरा वित्त',
     navCheckPayment: 'भुगतान जांचें',
     navHistory: 'इतिहास',
+    navKnowledge: 'ज्ञान आधार',
+    navArchitecture: 'आर्किटेक्चर विवरण',
     languageLabel: 'भाषा',
 
     heroTitle: 'अपने पैसों को समझें, खर्च की योजना बनाएं, और असामान्य भुगतान जांचें — आसान चरणों में।',
@@ -415,12 +424,15 @@ export const translations = {
   },
 
   ta: {
-    appName: 'மணிவைஸ்',
+    appName: 'ஃபின்வைஸ்',
     brandTagline: 'தனிநபர் நிதி & கட்டண பாதுகாப்பு',
     navHome: 'முகப்பு',
+    navAgentCenter: 'AI ஏஜென்ட் மையம்',
     navFinances: 'எனது நிதி',
     navCheckPayment: 'கட்டணத்தை சரிபார்க்கவும்',
     navHistory: 'வரலாறு',
+    navKnowledge: 'அறிவுத் தளம்',
+    navArchitecture: 'கட்டமைப்பு விவரக்குறிப்பு',
     languageLabel: 'மொழி',
 
     heroTitle: 'உங்கள் பணத்தைப் புரிந்து கொள்ளுங்கள், செலவுகளைத் திட்டமிடுங்கள், மற்றும் சந்தேகத்திற்கிடமான கட்டணங்களைச் சரிபார்க்கவும்.',
@@ -548,12 +560,15 @@ export const translations = {
   },
 
   te: {
-    appName: 'మనీవైజ్',
+    appName: 'ఫిన్‌వైజ్',
     brandTagline: 'వ్యక్తిగత ఆర్థిక నిర్వహణ & చెల్లింపు భద్రత',
     navHome: 'హోమ్',
+    navAgentCenter: 'AI ఏజెంట్ కేంద్రం',
     navFinances: 'నా ఆర్థిక స్థితి',
     navCheckPayment: 'చెల్లింపును తనిఖీ చేయండి',
     navHistory: 'చరిత్ర',
+    navKnowledge: 'జ్ఞాన భాండాగారం',
+    navArchitecture: 'ఆర్కిటెక్చర్ వివరాలు',
     languageLabel: 'భాష',
 
     heroTitle: 'మీ డబ్బును అర్థం చేసుకోండి, ఖర్చులను ప్లాన్ చేయండి, మరియు అనుమానాస్పద చెల్లింపులను తనిఖీ చేయండి.',
@@ -686,7 +701,7 @@ const LanguageContext = createContext();
 export const LanguageProvider = ({ children }) => {
   const [lang, setLang] = useState(() => {
     try {
-      return localStorage.getItem('moneywise_lang') || 'en';
+      return localStorage.getItem('finwise_lang') || localStorage.getItem('moneywise_lang') || 'en';
     } catch {
       return 'en';
     }
@@ -694,7 +709,7 @@ export const LanguageProvider = ({ children }) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('moneywise_lang', lang);
+      localStorage.setItem('finwise_lang', lang);
     } catch (e) {
       console.warn('Could not save language to localStorage', e);
     }

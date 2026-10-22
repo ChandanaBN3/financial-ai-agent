@@ -8,7 +8,11 @@ import {
   History, 
   Globe, 
   ChevronDown,
-  Sparkles
+  Sparkles,
+  BookOpen,
+  GitBranch,
+  RefreshCw,
+  Cpu
 } from 'lucide-react';
 
 const SUPPORTED_LANGUAGES = [
@@ -19,10 +23,12 @@ const SUPPORTED_LANGUAGES = [
   { code: 'te', label: 'Telugu', native: 'తెలుగు' }
 ];
 
-export default function Navbar({ activeTab, setActiveTab }) {
+export default function Navbar({ activeTab, setActiveTab, healthData, onResetDemo, isResetting }) {
   const { lang, setLang, t } = useLanguage();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const langMenuRef = useRef(null);
+
+  const isLLM = healthData?.agent_mode === 'LLM_ASSISTED';
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -36,9 +42,12 @@ export default function Navbar({ activeTab, setActiveTab }) {
 
   const navItems = [
     { id: 'overview', label: t('navHome'), icon: Home },
+    { id: 'agent-center', label: t('navAgentCenter') || 'AI Agent Center', icon: Bot, isHighlight: true },
     { id: 'advisory', label: t('navFinances'), icon: Calculator },
     { id: 'fraud', label: t('navCheckPayment'), icon: ShieldAlert },
-    { id: 'history', label: t('navHistory'), icon: History }
+    { id: 'history', label: t('navHistory'), icon: History },
+    { id: 'knowledge', label: t('navKnowledge') || 'Knowledge Base', icon: BookOpen },
+    { id: 'architecture', label: t('navArchitecture') || 'Architecture & Specs', icon: GitBranch }
   ];
 
   const currentLangObj = SUPPORTED_LANGUAGES.find(l => l.code === lang) || SUPPORTED_LANGUAGES[0];
@@ -60,20 +69,20 @@ export default function Navbar({ activeTab, setActiveTab }) {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="brand-title">{t('appName')}</span>
+              <span className="brand-title">FinWise</span>
               <span className="brand-pill">
                 <Sparkles size={11} style={{ marginRight: '3px' }} />
-                Smart & Private
+                Smart Assistant
               </span>
             </div>
             <div className="brand-tagline">
-              {t('brandTagline')}
+              Smart Financial Advisory & Payment Safety (India)
             </div>
           </div>
         </div>
 
-        {/* Navigation items + Language Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        {/* Navigation items + Language Selector + Demo Reset */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <nav className="nav-links" aria-label="Main Navigation">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -83,14 +92,30 @@ export default function Navbar({ activeTab, setActiveTab }) {
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
                   className={`nav-link ${isActive ? 'active' : ''}`}
+                  style={item.isHighlight && !isActive ? { border: '1px dashed #93c5fd', color: '#2563eb' } : {}}
                   type="button"
                 >
-                  <Icon size={16} />
+                  <Icon size={15} />
                   <span>{item.label}</span>
                 </button>
               );
             })}
           </nav>
+
+          {/* Reset Demo Database Button */}
+          {onResetDemo && (
+            <button
+              onClick={onResetDemo}
+              disabled={isResetting}
+              className="btn btn-secondary btn-sm"
+              title="Reset SQLite database with initial demo records"
+              style={{ fontSize: '0.78rem' }}
+              type="button"
+            >
+              <RefreshCw size={13} className={isResetting ? 'spin' : ''} />
+              <span>{isResetting ? 'Resetting...' : 'Reset'}</span>
+            </button>
+          )}
 
           {/* Language Selector Dropdown */}
           <div className="lang-selector-container" ref={langMenuRef} style={{ position: 'relative' }}>
@@ -101,9 +126,9 @@ export default function Navbar({ activeTab, setActiveTab }) {
               aria-expanded={langMenuOpen}
               aria-label="Select Language"
             >
-              <Globe size={15} color="#2563eb" />
+              <Globe size={14} color="#2563eb" />
               <span style={{ fontWeight: 600 }}>{currentLangObj.native}</span>
-              <ChevronDown size={14} className={langMenuOpen ? 'rotate-180' : ''} />
+              <ChevronDown size={13} className={langMenuOpen ? 'rotate-180' : ''} />
             </button>
 
             {langMenuOpen && (

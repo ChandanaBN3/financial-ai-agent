@@ -610,3 +610,83 @@ button, input, select, textarea {
     padding: 18px;
   }
 }
+
+/* Agent Execution Trace Styles */
+.trace-step {
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-left: 4px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+
+.trace-step.completed {
+  border-left: 4px solid var(--accent-emerald);
+}
+
+.trace-step.failed {
+  border-left: 4px solid var(--accent-rose);
+  background: #fff1f2;
+}
+
+.trace-step.running {
+  border-left: 4px solid var(--primary-blue);
+  background: #eff6ff;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-textarea {
+  width: 100%;
+  padding: 11px 14px;
+  background: #ffffff;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  color: #0f172a;
+  font-size: 0.94rem;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.badge-local {
+  background: #f5f3ff;
+  color: #6366f1;
+  border: 1px solid #c7d2fe;
+}
+
+.scenario-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scenario-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: #93c5fd !important;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
