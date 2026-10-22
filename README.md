@@ -1,188 +1,244 @@
-# MoneyWise – Personal Finance & Payment Safety Assistant
+# FinWise – Personal Finance & Payment Safety Assistant
 
-> A simple, private, beginner-friendly personal finance and digital payment safety web application tailored for everyday users in India.
+A privacy-focused personal finance and digital payment safety application designed for everyday users in India. FinWise helps users understand their financial health, evaluate unusual transactions, and review potential payment risks through a simple, multilingual interface.
 
----
+## Table of Contents
 
-## 📌 Table of Contents
-- [Project Overview](#-project-overview)
-- [Key Features](#-key-features)
-- [System Architecture & Agents](#-system-architecture--agents)
-- [India-First Design & Localisation](#-india-first-design--localisation)
-- [Technology Stack](#-technology-stack)
-- [Quickstart Guide](#-quickstart-guide)
-- [API Reference](#-api-reference)
-- [Automated Testing & Verification](#-automated-testing--verification)
-- [Privacy & Disclaimers](#-privacy--disclaimers)
+- [Overview](#overview)
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Technology Stack](#technology-stack)
+- [Supported Languages](#supported-languages)
+- [Getting Started](#getting-started)
+- [API Reference](#api-reference)
+- [Testing](#testing)
+- [Privacy and Disclaimer](#privacy-and-disclaimer)
 
----
+## Overview
 
-## 🎯 Project Overview
+FinWise combines financial health analysis, rule-based transaction risk assessment, and coordinated analysis modules in one application.
 
-MoneyWise is built for individuals and families in India who want to understand their monthly finances and protect themselves against unusual or risky digital payments (such as UPI QR scans and unexpected payment requests).
+The application is designed to make financial information easier to understand through plain-language explanations, transparent calculations, and practical suggestions.
 
-Key highlights:
-- **No Financial Jargon**: All questions use conversational, plain language (e.g., *"How much do you receive each month?"* instead of *"Net Inflow"*).
-- **100% Offline & Private**: Operates fully on your local machine using SQLite. No banking login, bank credentials, or third-party cloud uploads are required.
-- **Multilingual Support**: Real-time language switching between English, ಕನ್ನಡ (Kannada), हिन्दी (Hindi), தமிழ் (Tamil), and తెలుగు (Telugu).
-- **Deterministic Math**: Calculations (cash surplus/deficit, percentage spent, emergency runway) use pure mathematics with zero hallucinations.
+Key principles:
 
----
+- **Simple and understandable:** Financial metrics and risk assessments are explained in accessible language.
+- **Privacy-conscious:** The application is designed to run locally, using its configured database and backend.
+- **Transparent calculations:** Financial assessments and transaction risk scores use defined rules and calculations.
+- **Multilingual interface:** Users can switch between supported Indian languages.
+- **India-focused:** Currency formatting and payment safety information are tailored to Indian users.
 
-## ✨ Key Features
+## Features
 
-1. **My Finances (Guided Financial Health)**:
-   - Collects 4 simple figures: monthly income, total monthly expenses, current savings, and essential necessities.
-   - Calculates monthly leftover money, percentage of income spent, and how many months your savings cushion will support basic necessities.
-   - Generates 2–3 actionable, non-judgmental suggestions (e.g., surplus allocation, emergency buffer targets).
+### 1. Financial Health and Advisory
 
-2. **Check a Payment (Transaction Risk Scoring)**:
-   - Evaluates payment amounts, historical averages, 1-hour velocity spikes, and unfamiliar/first-time recipients.
-   - Outputs a transparent risk level (**Low**, **Medium**, or **High**) along with understandable reasons and actionable next steps.
-   - Helps prevent accidental transfers and common UPI frauds.
+- Calculates monthly income, expenses, and remaining balance.
+- Estimates the proportion of income spent.
+- Estimates how long current savings could cover essential expenses.
+- Provides practical budgeting and savings suggestions based on the available information.
 
-3. **Transaction History & Audit Trail**:
-   - Persists evaluated checks in a local SQLite database (`node:sqlite`).
-   - Filterable by risk level with search by payee name or transaction ID.
+### 2. Fraud and Transaction Risk Detection
 
-4. **Multi-Agent Coordination**:
-   - **Coordinator Agent**: Directs user requests to the appropriate analysis engine.
-   - **Financial Advisory Agent**: Evaluates cash flow, basic needs ratio, and runway.
-   - **Fraud Detection Agent**: Analyzes transaction safety using transparent heuristic rules.
+- Evaluates transaction amounts against typical payment amounts.
+- Checks for unusual transaction frequency.
+- Considers unfamiliar recipients when the relevant information is provided.
+- Classifies assessed transactions into risk levels such as Low, Medium, and High.
+- Provides explanations and recommended precautions.
 
----
+These assessments use defined rules and are intended to help users identify transactions that deserve additional attention.
 
-## 🏛️ System Architecture & Agents
+### 3. Transaction History
 
+- Records evaluated transactions when persistence is enabled.
+- Supports reviewing previous risk assessments.
+- Provides transaction history and filtering capabilities according to the implemented interface.
+
+### 4. Coordinated Analysis Modules
+
+FinWise organizes its analysis into separate modules:
+
+- **Coordinator Agent:** Selects and coordinates analysis steps for supported requests.
+- **Financial Advisory Agent:** Calculates financial metrics and produces budgeting recommendations.
+- **Fraud Detection Agent:** Evaluates transaction information using risk-scoring rules.
+- **Financial Health Analysis:** Combines relevant financial information into a summary when supported by the configured workflow.
+
+The current implementation primarily uses deterministic calculations, predefined rules, and coordinated execution. These modules should not be interpreted as fully autonomous or LLM-powered agents unless such functionality is explicitly configured.
+
+### 5. Knowledge Base
+
+- Provides access to supported financial and payment-safety information.
+- Retrieves relevant information using the application's configured retrieval logic.
+
+### 6. Multilingual Interface
+
+- Switches between supported languages.
+- Uses translation resources and fallback text to keep the interface understandable.
+
+## System Architecture
+
+```text
+                 User / Web Browser
+                         |
+                         v
+              React Frontend (Vite)
+                         |
+             Language and UI Context
+                         |
+                         v
+               Express REST API
+                         |
+                         v
+                Coordinator Agent
+                         |
+              +----------+----------+
+              |                     |
+              v                     v
+      Financial Advisory      Fraud Detection
+            Agent                   Agent
+              |                     |
+              +----------+----------+
+                         |
+                         v
+              Financial Health Summary
+                and Risk Explanations
+                         |
+                         v
+              Configured Data Storage
+               and Transaction History
 ```
-                           [ Web Browser (React 18 + Vite) ]
-                                          │
-                    Language Context (en, kn, hi, ta, te)
-                                          │
-                    REST API Calls (/api/advisory, /api/fraud)
-                                          │
-                                          ▼
-                ┌───────────────────────────────────────────────────┐
-                │             Express.js Application                │
-                └─────────────────────────┬─────────────────────────┘
-                                          │
-            ┌─────────────────────────────┼─────────────────────────────┐
-            ▼                             ▼                             ▼
- ┌──────────────────────┐      ┌──────────────────────┐      ┌──────────────────────┐
- │   Coordinator Agent  │      │  Financial Advisory  │      │   Fraud Detection    │
- │                      │      │        Agent         │      │        Agent         │
- │ • Routes requests    │      │ • Cash flow math     │      │ • Amount spike (5x)  │
- │ • Shared context     │      │ • 50/30/20 breakdown │      │ • Velocity burst     │
- │ • Graceful fallbacks │      │ • Savings runway     │      │ • Unfamiliar source  │
- └──────────────────────┘      └──────────┬───────────┘      └──────────┬───────────┘
-                                          │                             │
-                                          └──────────────┬──────────────┘
-                                                         ▼
-                                          ┌─────────────────────────────┐
-                                          │    Local SQLite Database    │
-                                          │  • Transactions Audit Log   │
-                                          │  • Verified Knowledge Docs  │
-                                          └─────────────────────────────┘
-```
 
----
+This diagram represents the logical application structure. The exact execution path and persistence behavior depend on the configured backend routes and modules.
 
-## 🌐 India-First Design & Localisation
+## Technology Stack
 
-- **Currency**: Indian Rupees (`₹`), with Indian numbering (Lakhs and Crores) and formatted currency tags.
-- **Languages**: 
-  - English (`en`)
-  - ಕನ್ನಡ (`kn`) — Kannada
-  - हिन्दी (`hi`) — Hindi
-  - தமிழ் (`ta`) — Tamil
-  - తెలుగు (`te`) — Telugu
-- **Timezone**: Indian Standard Time (`IST`) for payment audit records.
-- **Safety Helplines**: Displays National Cyber Crime Helpline (`1930`) advice on unfamiliar payment reviews.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technology |
+| Layer | Technologies |
 |---|---|
-| **Frontend** | React 18, Vite 6, Lucide Icons |
-| **Styling** | Modern responsive CSS, accessible contrast, system fonts |
-| **Backend** | Node.js (v20+ or v22+), Express.js |
-| **Database** | Native Node.js SQLite (`node:sqlite`) |
-| **Internationalisation** | Built-in zero-dependency Context provider with client-side persistence |
-| **Automated Tests** | Node.js native test runner (`node --test`) |
+| Frontend | React, Vite, JavaScript |
+| Styling | CSS and responsive UI components |
+| Backend | Node.js, Express.js |
+| Data storage | SQLite, where configured |
+| API communication | REST APIs |
+| Internationalisation | React Context and translation resources |
+| Testing | Node.js test runner and project test scripts |
 
----
+## Supported Languages
 
-## 🚀 Quickstart Guide
+The interface is designed to support:
+
+- English
+- ಕನ್ನಡ — Kannada
+- हिन्दी — Hindi
+- தமிழ் — Tamil
+- తెలుగు — Telugu
+
+Language availability depends on the translations included in the current application.
+
+## Getting Started
 
 ### Prerequisites
-- Node.js (version 20 or 22 recommended)
-- Windows PowerShell, macOS Terminal, or Linux Bash
 
-### Installation
+- Node.js compatible with the project's dependencies
+- npm
+- Git, if cloning the repository
 
-```powershell
-# 1. Clone or navigate to the project directory
-cd "c:\Users\chand\financial-ai-agent"
+### 1. Clone the repository
 
-# 2. Install dependencies
+```bash
+git clone https://github.com/ChandanaBN3/financial-ai-agent.git
+cd financial-ai-agent
+```
+
+### 2. Install dependencies
+
+```bash
 npm run setup
 ```
 
-### Running the Application
+If the setup script is unavailable in your current version, install dependencies using the instructions in the root and package-specific `package.json` files.
 
-**Option A: Run Server & Client Together (Development)**
-```powershell
+### 3. Start development mode
+
+```bash
 npm run dev
 ```
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:5000`
 
-**Option B: Production Mode (Single Port)**
-```powershell
-# Build client and run server (Express serves dist files at root)
+If the configured scripts start both applications together, use these local addresses:
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:5000
+
+The actual ports depend on your local configuration.
+
+### 4. Build for production
+
+```bash
 npm run build
-npm start:server
 ```
-- Open `http://localhost:5000` in any web browser.
 
----
+To start the backend in production mode, use the start script defined in the root `package.json`. For example, if the configured script is named `start:server`:
 
-## 📡 API Reference
+```bash
+npm run start:server
+```
 
-| Method | Endpoint | Description |
+Then open the backend's configured local address in your browser.
+
+## API Reference
+
+The following endpoints are documented for the application's API. Confirm their availability against the current backend implementation.
+
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/api/health` | System health, database connection, agent status |
-| `POST` | `/api/advisory/calculate` | Compute monthly income, expenses, surplus, and runway |
-| `POST` | `/api/fraud/evaluate` | Evaluate transaction risk and optionally persist to SQLite |
-| `GET` | `/api/transactions` | Query evaluated transaction history with risk filters |
-| `GET` | `/api/dashboard/summary` | Aggregate metrics and recent evaluations |
-| `POST` | `/api/demo/reset` | Reset demo transaction records in SQLite |
+| GET | `/api/health` | Reports service health and available status information |
+| POST | `/api/advisory/calculate` | Calculates financial metrics and advisory results |
+| POST | `/api/fraud/evaluate` | Evaluates transaction risk |
+| GET | `/api/transactions` | Retrieves transaction history |
+| GET | `/api/dashboard/summary` | Retrieves dashboard summary data |
+| POST | `/api/demo/reset` | Resets demo transaction records, if enabled |
 
----
+Request fields, validation rules, response formats, and database behavior are defined by the backend implementation.
 
-## 🧪 Automated Testing & Verification
+## Testing
 
-Run the test suite:
-```powershell
+Run the project's configured test suite:
+
+```bash
 npm test
 ```
 
-### Test Suite Coverage:
-- **31 test cases** across 6 test suites:
-  - `test/advisory.test.js`: Positive profile, zero income, negative values, essentials > expenses validations.
-  - `test/fraud.test.js`: Normal UPI payments, spike detection, unusual velocity, unfamiliar recipients, zero rupee verification probes.
-  - `test/api.test.js`: Health check, advisory API, fraud API, transaction query API, reset demo API.
-  - `test/database.test.js`: SQLite CRUD and metrics persistence.
-  - `test/knowledge.test.js`: Rule querying and keyword retrieval.
-  - `test/orchestrator.test.js`: Multi-agent coordination and fallback handling.
+Additional verification scripts may be available under the `server/test` directory.
 
-**Current Test Status**: `31 passed, 0 failed`.
+Testing may cover:
+
+- Financial calculations and input validation
+- Transaction risk scoring
+- API endpoints
+- Data persistence
+- Knowledge retrieval
+- Agent coordination and fallback handling
+
+Test counts and pass/fail results should be updated only after running the current test suite successfully.
+
+## Privacy and Disclaimer
+
+### Privacy
+
+FinWise is intended to support local financial analysis. Data handling depends on the application's current database configuration, deployment environment, and API integrations.
+
+Do not enter banking passwords, UPI PINs, OTPs, card security codes, or other confidential authentication information into the application.
+
+### Financial Information
+
+FinWise provides general budgeting calculations and informational suggestions. It is not a substitute for advice from a qualified financial professional.
+
+### Payment Safety
+
+Transaction risk classifications are indicative assessments, not guarantees. A low-risk result does not establish that a payment is safe, and a high-risk result does not prove fraud.
+
+Before transferring money, independently verify the recipient and payment details. Never disclose your UPI PIN or OTP to another person.
+
+For suspected cyber financial fraud in India, contact the official cybercrime reporting service or call **1930** as soon as possible.
 
 ---
 
-## ⚠️ Privacy & Disclaimers
-
-- **Educational & Informational Tool**: MoneyWise provides heuristic assessments based on mathematical budgeting models and rule-based safety patterns. It does not provide certified financial advice under SEBI regulations.
-- **Payment Verification**: A "Low Risk" evaluation does not guarantee that a transfer is completely safe, nor does a "High Risk" score prove intentional fraud. Always confirm unfamiliar recipient phone numbers and UPI IDs before entering a UPI PIN.
+FinWise — Clearer financial insights. More informed payment decisions.
