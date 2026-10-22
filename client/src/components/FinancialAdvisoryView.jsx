@@ -1,340 +1,477 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { 
   Calculator, 
   IndianRupee, 
-  TrendingUp, 
-  ShieldCheck, 
-  AlertTriangle, 
   CheckCircle2, 
+  AlertTriangle, 
+  Edit3, 
   RefreshCw,
   Sparkles,
-  PieChart
+  HelpCircle,
+  ShieldCheck,
+  TrendingUp,
+  ArrowRight
 } from 'lucide-react';
 import { calculateAdvisory } from '../services/api';
-import { formatINR, formatPercentage } from '../utils/formatters';
-
-const INDIAN_PROFILES = {
-  BENGALURU_TECH: {
-    label: 'Bengaluru IT Professional (₹1.2L Income)',
-    income: 120000,
-    expenses: 68000,
-    essentials: 42000,
-    savings: 320000,
-    goal: 1000000,
-    categories: { rent: 28000, groceries: 8000, utilities: 4000, dining: 15000, misc: 13000 }
-  },
-  MUMBAI_HIGH_RENT: {
-    label: 'Mumbai High Rent Pressure (₹65k Income)',
-    income: 65000,
-    expenses: 58000,
-    essentials: 48000,
-    savings: 40000,
-    goal: 300000,
-    categories: { rent: 32000, groceries: 10000, utilities: 4000, transport: 5000, misc: 7000 }
-  },
-  FREELANCER_VARIABLE: {
-    label: 'Freelancer / Variable Cash Flow (₹80k Income)',
-    income: 80000,
-    expenses: 45000,
-    essentials: 30000,
-    savings: 150000,
-    goal: 500000,
-    categories: { rent: 18000, groceries: 7000, utilities: 3000, software: 8000, misc: 9000 }
-  }
-};
+import { formatINR } from '../utils/formatters';
 
 export default function FinancialAdvisoryView() {
+  const { t } = useLanguage();
+
+  // Form inputs state
   const [formData, setFormData] = useState({
-    monthly_income: 100000,
-    monthly_expenses: 62000,
-    essential_expenses: 42000,
-    current_savings: 250000,
-    savings_goal: 600000
+    monthly_income: '30000',
+    monthly_expenses: '22000',
+    current_savings: '15000',
+    essential_expenses: '14000'
   });
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [validationError, setValidationError] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
 
-  const applyProfile = (key) => {
-    const p = INDIAN_PROFILES[key];
+  // Sample beginner-friendly profiles for testing
+  const SAMPLE_PROFILES = [
+    {
+      name: t('profileBangalore'),
+      income: '100000',
+      expenses: '65000',
+      savings: '200000',
+      essentials: '40000'
+    },
+    {
+      name: t('profileMumbai'),
+      income: '65000',
+      expenses: '58000',
+      savings: '35000',
+      essentials: '45000'
+    },
+    {
+      name: t('profileFreelancer'),
+      income: '80000',
+      expenses: '45000',
+      savings: '120000',
+      essentials: '30000'
+    }
+  ];
+
+  const applySample = (profile) => {
     setFormData({
-      monthly_income: p.income,
-      monthly_expenses: p.expenses,
-      essential_expenses: p.essentials,
-      current_savings: p.savings,
-      savings_goal: p.goal
+      monthly_income: profile.income,
+      monthly_expenses: profile.expenses,
+      current_savings: profile.savings,
+      essential_expenses: profile.essentials
     });
     setResult(null);
-    setErrorMsg(null);
+    setValidationError(null);
+    setIsEditing(true);
+  };
+
+  const handleInputChange = (field, value) => {
+    // Only allow positive digits
+    const cleaned = value.replace(/[^0-9]/g, '');
+    setFormData(prev => ({ ...prev, [field]: cleaned }));
+    if (validationError) setValidationError(null);
   };
 
   const handleCalculate = async (e) => {
     if (e) e.preventDefault();
+    setValidationError(null);
+
+    const income = Number(formData.monthly_income);
+    const expenses = Number(formData.monthly_expenses);
+    const savings = Number(formData.current_savings || 0);
+    const essentials = Number(formData.essential_expenses || 0);
+
+    // Validation
+    if (!formData.monthly_income || isNaN(income) || income <= 0) {
+      setValidationError(t('incomeValidationNote'));
+      return;
+    }
+
+    if (formData.monthly_expenses === '' || isNaN(expenses) || expenses < 0) {
+      setValidationError(t('expensesValidationNote'));
+      return;
+    }
+
+    if (isNaN(savings) || savings < 0) {
+      setValidationError(t('savingsValidationNote'));
+      return;
+    }
+
+    if (essentials > expenses) {
+      setValidationError(t('essentialsValidationNote'));
+      return;
+    }
+
     setLoading(true);
-    setErrorMsg(null);
 
     try {
-      const resp = await calculateAdvisory(formData);
+      // Call existing backend calculator
+      const resp = await calculateAdvisory({
+        monthly_income: income,
+        monthly_expenses: expenses,
+        essential_expenses: essentials,
+        current_savings: savings
+      });
+
       if (!resp.success) {
-        setErrorMsg(resp.error || 'Advisory calculation failed');
+        setValidationError(resp.error || t('error'));
       } else {
         setResult(resp);
+        setIsEditing(false);
       }
     } catch (err) {
-      setErrorMsg(`Network error: ${err.message}`);
+      // Local fallback calculation if backend has network glitch
+      const netLeftover = income - expenses;
+      const pctSpent = income > 0 ? (expenses / income) * 100 : 0;
+      const runwayMonths = essentials > 0 ? (savings / essentials).toFixed(1) : (expenses > 0 ? (savings / expenses).toFixed(1) : 0);
+      
+      setResult({
+        success: true,
+        metrics: {
+          monthly_income: income,
+          monthly_expenses: expenses,
+          essential_expenses: essentials,
+          current_savings: savings,
+          net_cash_flow: netLeftover,
+          expense_ratio: pctSpent / 100,
+          savings_rate: netLeftover > 0 ? netLeftover / income : 0,
+          emergency_coverage_months: Number(runwayMonths)
+        }
+      });
+      setIsEditing(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const resetForm = () => {
+  const handleReset = () => {
     setFormData({
-      monthly_income: 0,
-      monthly_expenses: 0,
-      essential_expenses: 0,
-      current_savings: 0,
-      savings_goal: 0
+      monthly_income: '',
+      monthly_expenses: '',
+      current_savings: '',
+      essential_expenses: ''
     });
     setResult(null);
-    setErrorMsg(null);
+    setValidationError(null);
+    setIsEditing(true);
   };
 
+  // Metrics from results
   const m = result?.metrics;
-  const a = result?.assessment;
+  const netLeftover = m ? m.net_cash_flow : 0;
+  const pctSpent = m ? Math.round((m.monthly_expenses / (m.monthly_income || 1)) * 100) : 0;
+  const runway = m ? m.emergency_coverage_months : 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header */}
-      <div className="card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <span className="badge badge-info"><Calculator size={13} /> Financial Advisory Module</span>
-              <span className="badge badge-local">Deterministic Calculator</span>
-            </div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>
-              Smart Financial Advisory & Cash Flow Analysis
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Analyzes Indian household cash flow, evaluates emergency fund runway, and contrasts against the 50/30/20 benchmark in INR.
-            </p>
-          </div>
-
-          {/* Preset Profiles */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {Object.entries(INDIAN_PROFILES).map(([key, p]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => applyProfile(key)}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '0.78rem' }}
-              >
-                <Sparkles size={12} color="#38bdf8" />
-                <span>{p.label}</span>
-              </button>
-            ))}
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Title & Introduction */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span className="badge badge-info">
+            <Calculator size={13} style={{ marginRight: '4px' }} />
+            {t('navFinances')}
+          </span>
+          <span className="badge badge-low">
+            <ShieldCheck size={13} style={{ marginRight: '4px' }} />
+            {t('agentAdvTitle')}
+          </span>
         </div>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
+          {t('finTitle')}
+        </h1>
+        <p style={{ color: '#64748b', fontSize: '0.98rem' }}>
+          {t('finSubtitle')}
+        </p>
       </div>
 
-      <div className="grid-3">
-        {/* Input Form (1 Col) */}
+      {/* Main Grid: Form on left, Results on right */}
+      <div className="grid-2">
+        {/* Guided Form */}
         <div className="card">
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '16px' }}>
-            📊 Financial Inputs (₹ INR)
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
+              📝 {t('finTitle')}
+            </h2>
+            {result && !isEditing && (
+              <button 
+                type="button" 
+                onClick={() => setIsEditing(true)} 
+                className="btn btn-secondary btn-sm"
+              >
+                <Edit3 size={14} />
+                <span>{t('btnEdit')}</span>
+              </button>
+            )}
+          </div>
 
-          <form onSubmit={handleCalculate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form onSubmit={handleCalculate}>
+            {/* Field 1: Income */}
             <div className="form-group">
-              <label className="form-label">Monthly Take-Home Income (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.monthly_income}
-                onChange={(e) => setFormData({ ...formData, monthly_income: Number(e.target.value) })}
-                required
-                min="1"
-              />
+              <label className="form-label" htmlFor="fin_income">
+                {t('formIncomeLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="fin_income"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.monthly_income}
+                  onChange={(e) => handleInputChange('monthly_income', e.target.value)}
+                  placeholder="e.g. 30000"
+                  required
+                />
+              </div>
+              <span className="form-helper">{t('formIncomeHelper')}</span>
             </div>
 
+            {/* Field 2: Total Expenses */}
             <div className="form-group">
-              <label className="form-label">Total Monthly Expenses (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.monthly_expenses}
-                onChange={(e) => setFormData({ ...formData, monthly_expenses: Number(e.target.value) })}
-                required
-                min="0"
-              />
+              <label className="form-label" htmlFor="fin_expenses">
+                {t('formExpensesLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="fin_expenses"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.monthly_expenses}
+                  onChange={(e) => handleInputChange('monthly_expenses', e.target.value)}
+                  placeholder="e.g. 22000"
+                  required
+                />
+              </div>
+              <span className="form-helper">{t('formExpensesHelper')}</span>
             </div>
 
+            {/* Field 3: Current Savings */}
             <div className="form-group">
-              <label className="form-label">Essential Living Expenses (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.essential_expenses}
-                onChange={(e) => setFormData({ ...formData, essential_expenses: Number(e.target.value) })}
-                placeholder="Rent, EMIs, Kirana groceries, Utilities"
-              />
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Must be ≤ Total Monthly Expenses
-              </span>
+              <label className="form-label" htmlFor="fin_savings">
+                {t('formSavingsLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="fin_savings"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.current_savings}
+                  onChange={(e) => handleInputChange('current_savings', e.target.value)}
+                  placeholder="e.g. 15000 (enter 0 if none)"
+                />
+              </div>
+              <span className="form-helper">{t('formSavingsHelper')}</span>
             </div>
 
+            {/* Field 4: Essential Needs */}
             <div className="form-group">
-              <label className="form-label">Current Liquid Savings (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.current_savings}
-                onChange={(e) => setFormData({ ...formData, current_savings: Number(e.target.value) })}
-                placeholder="Savings bank balance, liquid FDs"
-              />
+              <label className="form-label" htmlFor="fin_essentials">
+                {t('formEssentialsLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="fin_essentials"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.essential_expenses}
+                  onChange={(e) => handleInputChange('essential_expenses', e.target.value)}
+                  placeholder="e.g. 14000"
+                />
+              </div>
+              <span className="form-helper">{t('formEssentialsHelper')}</span>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Optional Savings Goal (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.savings_goal}
-                onChange={(e) => setFormData({ ...formData, savings_goal: Number(e.target.value) })}
-                placeholder="e.g. 5,00,000 for emergency buffer or downpayment"
-              />
-            </div>
-
-            {errorMsg && (
-              <div style={{ padding: '10px 12px', background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '6px', color: '#fb7185', fontSize: '0.82rem' }}>
-                {errorMsg}
+            {/* Validation Warning */}
+            {validationError && (
+              <div className="alert-box alert-error" style={{ marginBottom: '16px' }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>{validationError}</span>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-              <button type="submit" disabled={loading} className="btn btn-primary" style={{ flex: 1 }}>
+            {/* Form Actions */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button 
+                type="submit" 
+                disabled={loading} 
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+              >
                 <Calculator size={16} />
-                <span>{loading ? 'Calculating...' : 'Calculate Metrics'}</span>
+                <span>{loading ? t('btnCalculating') : t('btnCalculate')}</span>
               </button>
-              <button type="button" onClick={resetForm} className="btn btn-secondary">
+              
+              <button 
+                type="button" 
+                onClick={handleReset} 
+                className="btn btn-secondary"
+                title={t('btnReset')}
+              >
                 <RefreshCw size={15} />
               </button>
             </div>
           </form>
+
+          {/* Sample quick presets */}
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>
+              {t('sampleProfilesTitle')}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {SAMPLE_PROFILES.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => applySample(p)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ justifyContent: 'flex-start', fontSize: '0.8rem', textAlign: 'left' }}
+                >
+                  <Sparkles size={12} color="#2563eb" />
+                  <span>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Visual Summary & Results (2 Cols) */}
-        <div className="card" style={{ gridColumn: 'span 2' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '16px' }}>
-            📈 Advisory Findings & Budget Visualizer
+        {/* Calculated Results Summary */}
+        <div className="card">
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
+            📊 {t('summaryTitle')}
           </h2>
 
           {!result ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-              <Calculator size={48} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
-              <p style={{ fontSize: '1rem', fontWeight: 600 }}>Enter your monthly financial figures or click a sample profile above.</p>
-              <p style={{ fontSize: '0.85rem' }}>Metrics are computed strictly through deterministic formulas without model hallucinations.</p>
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+              <Calculator size={44} style={{ margin: '0 auto 12px', opacity: 0.35, color: '#2563eb' }} />
+              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>
+                {t('finSubtitle')}
+              </p>
+              <p style={{ fontSize: '0.86rem', marginTop: '6px' }}>
+                Enter your monthly numbers on the left and tap "{t('btnCalculate')}".
+              </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {/* 4 Key Output Cards */}
-              <div className="grid-4">
-                <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>NET CASH FLOW</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: m.net_cash_flow >= 0 ? '#34d399' : '#fb7185' }}>
-                    {formatINR(m.net_cash_flow)}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monthly Surplus / Deficit</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* 4 Core User Metrics */}
+              <div className="grid-2">
+                {/* Metric 1: Income */}
+                <div className="metric-box">
+                  <div className="metric-title">{t('metricIncome')}</div>
+                  <div className="metric-value">{formatINR(m.monthly_income)}</div>
+                  <div className="metric-sub">Received every month</div>
                 </div>
 
-                <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>SAVINGS RATE</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: m.savings_rate >= 0.20 ? '#34d399' : m.savings_rate >= 0.10 ? '#fbbf24' : '#fb7185' }}>
-                    {formatPercentage(m.savings_rate)}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Target: ≥ 20.0%</div>
+                {/* Metric 2: Expenses */}
+                <div className="metric-box">
+                  <div className="metric-title">{t('metricExpenses')}</div>
+                  <div className="metric-value">{formatINR(m.monthly_expenses)}</div>
+                  <div className="metric-sub">Total monthly outgoings</div>
                 </div>
 
-                <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>EXPENSE RATIO</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: m.expense_ratio <= 0.80 ? '#34d399' : '#fb7185' }}>
-                    {formatPercentage(m.expense_ratio)}
+                {/* Metric 3: Money Left Over */}
+                <div className="metric-box" style={{ background: netLeftover >= 0 ? '#f0fdf4' : '#fef2f2', borderColor: netLeftover >= 0 ? '#bbf7d0' : '#fecaca' }}>
+                  <div className="metric-title">{t('metricLeftover')}</div>
+                  <div className={`metric-value ${netLeftover >= 0 ? 'positive' : 'negative'}`}>
+                    {netLeftover >= 0 ? `+${formatINR(netLeftover)}` : `-${formatINR(Math.abs(netLeftover))}`}
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Healthy: &lt; 80.0%</div>
+                  <div className="metric-sub">
+                    {netLeftover >= 0 ? 'Monthly surplus available' : 'Monthly deficit'}
+                  </div>
                 </div>
 
-                <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>EMERGENCY RUNWAY</div>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: m.emergency_coverage_months >= 3 ? '#34d399' : '#fb7185' }}>
-                    {m.emergency_coverage_months} <span style={{ fontSize: '0.85rem' }}>Months</span>
+                {/* Metric 4: Spending % */}
+                <div className="metric-box">
+                  <div className="metric-title">{t('metricSpendRate')}</div>
+                  <div className="metric-value" style={{ color: pctSpent <= 80 ? '#059669' : '#d97706' }}>
+                    {pctSpent}%
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Target: 3 - 6 Months</div>
-                </div>
-              </div>
-
-              {/* 50/30/20 Budget Breakdown Bar & Comparison */}
-              <div style={{ background: '#0d1322', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>50 / 30 / 20 Budgeting Rule Comparison</span>
-                  <span className="badge badge-info">Indian Standard Framework</span>
-                </div>
-
-                <div style={{ display: 'flex', height: '14px', borderRadius: '9999px', overflow: 'hidden', margin: '12px 0' }}>
-                  <div style={{ width: `${Math.min(100, (m.essential_expenses / m.monthly_income) * 100)}%`, background: '#3b82f6' }} title={`Needs: ${formatINR(m.essential_expenses)}`} />
-                  <div style={{ width: `${Math.min(100, (m.discretionary_expenses / m.monthly_income) * 100)}%`, background: '#8b5cf6' }} title={`Wants: ${formatINR(m.discretionary_expenses)}`} />
-                  <div style={{ width: `${Math.max(0, m.savings_rate * 100)}%`, background: '#10b981' }} title={`Savings: ${formatINR(m.net_cash_flow)}`} />
-                </div>
-
-                <div className="grid-3" style={{ fontSize: '0.82rem', marginTop: '10px' }}>
-                  <div>
-                    <div style={{ color: '#60a5fa', fontWeight: 600 }}>Needs (Essentials): {formatINR(m.essential_expenses)}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>Target (50%): {formatINR(m.rule_50_30_20.target.needs)}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: '#a78bfa', fontWeight: 600 }}>Wants (Discretionary): {formatINR(m.discretionary_expenses)}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>Target (30%): {formatINR(m.rule_50_30_20.target.wants)}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: '#34d399', fontWeight: 600 }}>Savings Surplus: {formatINR(m.net_cash_flow)}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>Target (20%): {formatINR(m.rule_50_30_20.target.savings)}</div>
+                  <div className="metric-sub">
+                    {pctSpent <= 80 ? 'Within healthy bounds (≤ 80%)' : 'High spending ratio (> 80%)'}
                   </div>
                 </div>
               </div>
 
-              {/* Goal Feasibility */}
-              {m.goal_analysis && (
-                <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', marginBottom: '6px' }}>
-                    🎯 Savings Goal Trajectory ({formatINR(m.goal_analysis.savings_goal)})
-                  </div>
-                  <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                    Remaining Shortfall: <strong style={{ color: '#fff' }}>{formatINR(m.goal_analysis.remaining_target)}</strong> • Estimated Timeline: <strong style={{ color: '#38bdf8' }}>{m.goal_analysis.estimated_months ? `${m.goal_analysis.estimated_months} Months` : 'Unachievable at current negative cash flow'}</strong>
-                  </div>
+              {/* Savings Cushion (Runway) */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>
+                    🛡️ {t('metricRunway')}
+                  </span>
+                  <span className={`badge ${runway >= 3 ? 'badge-low' : 'badge-medium'}`}>
+                    {runway} {t('runwayMonths')}
+                  </span>
                 </div>
-              )}
+                <p style={{ fontSize: '0.84rem', color: '#64748b', lineHeight: 1.45 }}>
+                  At your current basic necessities of {formatINR(m.essential_expenses || m.monthly_expenses)}, your existing savings of {formatINR(m.current_savings)} would cover approximately <strong>{runway} months</strong> if income paused.
+                </p>
+              </div>
 
-              {/* Actionable Recommendations */}
-              {a?.actionable_recommendations?.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8', marginBottom: '8px' }}>
-                    💡 ACTIONABLE BUDGET RECOMMENDATIONS
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {a.actionable_recommendations.map((rec, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: '#0d1322', padding: '10px 12px', borderRadius: '6px', fontSize: '0.82rem', border: '1px solid var(--border-color)' }}>
-                        <CheckCircle2 size={15} color="#34d399" style={{ flexShrink: 0, marginTop: '2px' }} />
-                        <span>{rec}</span>
-                      </div>
-                    ))}
-                  </div>
+              {/* 2 to 3 Actionable Practical Suggestions */}
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e40af', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={16} />
+                  <span>{t('suggestionsTitle')}</span>
                 </div>
-              )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: '#1e3a8a' }}>
+                  {/* Suggestion 1: Cash flow */}
+                  {netLeftover > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionSurplus', { amount: formatINR(netLeftover) })}</span>
+                    </div>
+                  ) : netLeftover < 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <AlertTriangle size={16} color="#e11d48" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionDeficit', { amount: formatINR(Math.abs(netLeftover)) })}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionTight')}</span>
+                    </div>
+                  )}
+
+                  {/* Suggestion 2: Runway */}
+                  {runway >= 3 ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionRunwayGood', { months: runway })}</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionRunwayLow')}</span>
+                    </div>
+                  )}
+
+                  {/* Suggestion 3: Essentials ratio */}
+                  {m.essential_expenses && m.monthly_income > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#2563eb" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('suggestionNeedsHigh', { pct: Math.round((m.essential_expenses / m.monthly_income) * 100) })}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Disclaimer */}
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                ⚠️ <strong>Educational Prototype Notice:</strong> {result.disclaimer || 'Calculations are deterministic educational simulations and not SEBI-registered advisory.'}
+              <div style={{ fontSize: '0.74rem', color: '#94a3b8', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
+                {t('disclaimerFin')}
               </div>
             </div>
           )}

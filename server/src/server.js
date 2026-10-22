@@ -19,7 +19,7 @@ const server = app.listen(PORT, () => {
   const mode = llmPlanner.isConfigured() ? 'LLM-Assisted Mode (Gemini API Active)' : 'Local Agent Mode (100% Offline & Deterministic)';
 
   console.log('================================================================');
-  console.log('🚀 Project 418: Agentic AI Financial Advisory & Fraud Detection');
+  console.log('🚀 MoneyWise: Personal Financial Advisory & Payment Safety');
   console.log(`📡 Backend API running on: http://localhost:${PORT}`);
   console.log(`🤖 Agent Orchestration Mode: ${mode}`);
   console.log(`🇮🇳 Currency: INR (₹) | Locale: en-IN | Timezone: IST`);

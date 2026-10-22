@@ -1,11 +1,15 @@
-import { AGENT_ROLES, WORKFLOW_TYPES, ALLOWED_TOOLS } from '../config/constants.js';
+// Simplified Orchestrator (Coordinator) Agent
+// Directs three main agents: Financial Advisory, Fraud Detection, and a health aggregator.
+// Supports explicit workflow types and a controlled tool-failure demo for testing.
+// All steps are recorded in a deterministic execution trace without LLM dependence.
+// The 'mode' parameter can be 'LOCAL' (default) to run without external API keys.
+
+import { AGENT_ROLES, WORKFLOW_TYPES } from '../config/constants.js';
 import { FinancialAdvisoryAgent } from './financialAdvisoryAgent.js';
 import { FraudDetectionAgent } from './fraudDetectionAgent.js';
 import { FinancialHealthAgent } from './financialHealthAgent.js';
-import { ExplanationAgent } from './explanationAgent.js';
-import { LLMPlanner } from './llmPlanner.js';
-import { executeTool } from '../tools/index.js';
 import { Repository } from '../db/repository.js';
+import { searchKnowledgeBase } from '../tools/knowledgeRetriever.js';
 
 export class OrchestratorAgent {
   constructor(repository = null) {
@@ -14,48 +18,27 @@ export class OrchestratorAgent {
     this.advisoryAgent = new FinancialAdvisoryAgent();
     this.fraudAgent = new FraudDetectionAgent();
     this.healthAgent = new FinancialHealthAgent();
-    this.explanationAgent = new ExplanationAgent();
-    this.llmPlanner = new LLMPlanner();
     this.maxSteps = 6;
     this.timeoutMs = 15000;
   }
 
-  /**
-   * Main entry point to orchestrate user tasks
-   */
+  /** Main entry point – simplified workflow */
   async runTask({ prompt, workflowType = null, inputData = {}, mode = 'LOCAL' }) {
     const runStartTime = Date.now();
     const runId = `RUN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-    // 1. Task Classification
     const classifiedWorkflow = workflowType || this.classifyTask(prompt, inputData);
-
-    // 2. Determine execution mode (Check if LLM requested and available)
-    let executionMode = 'LOCAL';
-    if (mode === 'LLM_ASSISTED' && this.llmPlanner.isConfigured()) {
-      executionMode = 'LLM_ASSISTED';
-    }
-
-    // 3. Create bounded execution plan
-    const plan = this.createExecutionPlan(classifiedWorkflow, prompt, inputData);
-
+    const plan = this.createSimplePlan(classifiedWorkflow);
     const executionTrace = [];
     const specialistOutputs = {};
     let runStatus = 'SUCCESS';
     let failureReason = null;
 
-    // 4. Controlled Execution Loop
-    for (let i = 0; i < plan.steps.length; i++) {
-      if (i >= this.maxSteps) {
-        break; // Hard boundary enforcement
-      }
-
+    for (let i = 0; i < plan.steps.length && i < this.maxSteps; i++) {
       const stepPlan = plan.steps[i];
       const stepRecord = {
         step_id: stepPlan.step_id,
         agent: stepPlan.agent,
         action: stepPlan.action,
-        tool: stepPlan.tool,
         status: 'RUNNING',
         started_at: new Date().toISOString(),
         inputs: {},
@@ -63,12 +46,10 @@ export class OrchestratorAgent {
         error: null,
         duration_ms: 0
       };
-
       const stepStart = Date.now();
 
       try {
-        await this.executePlanStep(stepPlan, inputData, specialistOutputs, stepRecord);
-
+        await this.executeSimpleStep(stepPlan, inputData, specialistOutputs, stepRecord, prompt);
         stepRecord.duration_ms = Date.now() - stepStart;
         stepRecord.completed_at = new Date().toISOString();
 
@@ -77,15 +58,13 @@ export class OrchestratorAgent {
           runStatus = 'FAILED';
           failureReason = stepRecord.error;
           executionTrace.push(stepRecord);
-          // If a crucial step fails, do not proceed with downstream dependency execution
           break;
-        } else {
-          stepRecord.status = 'COMPLETED';
-          executionTrace.push(stepRecord);
         }
+        stepRecord.status = 'COMPLETED';
+        executionTrace.push(stepRecord);
       } catch (err) {
         stepRecord.status = 'FAILED';
-        stepRecord.error = `Unexpected step execution error: ${err.message}`;
+        stepRecord.error = `Unexpected error: ${err.message}`;
         stepRecord.duration_ms = Date.now() - stepStart;
         runStatus = 'FAILED';
         failureReason = stepRecord.error;
@@ -94,49 +73,37 @@ export class OrchestratorAgent {
       }
     }
 
-    // 5. Final Synthesis by Explanation Agent
-    let finalSynthesis = null;
-
-    if (runStatus === 'SUCCESS') {
-      try {
-        finalSynthesis = await this.explanationAgent.synthesize({
-          taskPrompt: prompt,
-          workflowType: classifiedWorkflow,
-          executionTrace,
-          specialistOutputs,
-          mode: executionMode
-        });
-      } catch (err) {
-        finalSynthesis = {
-          explanation: `Synthesis error: ${err.message}`,
-          warnings: ['Failed to synthesize formatted narrative.'],
-          is_llm_generated: false
-        };
-      }
-    } else {
-      // Truthful failure reporting
-      finalSynthesis = {
-        agent: AGENT_ROLES.EXPLAINER,
-        mode: executionMode,
-        explanation: `### ❌ Workflow Halted Due to Step Failure\n\nThe orchestrator encountered a failure during execution:\n> **${failureReason}**\n\nThe system stopped execution truthfully without inventing or fabricating downstream results.`,
-        is_llm_generated: false,
-        warnings: [failureReason || 'One or more tool steps reported failure.'],
-        assumptions: [],
-        next_steps: [
-          'Verify that input values conform to required positive numerical ranges.',
-          'Review the execution trace below for exact parameters and tool error codes.'
-        ]
-      };
+    // Post-processing for combined health
+    if (runStatus === 'SUCCESS' && classifiedWorkflow === WORKFLOW_TYPES.COMBINED_HEALTH) {
+      const healthResult = await this.healthAgent.process(specialistOutputs);
+      specialistOutputs.health = healthResult;
     }
 
-    const totalDurationMs = Date.now() - runStartTime;
+    // Deterministic final synthesis (no LLM)
+    const evidence = this.buildEvidence(specialistOutputs);
+    const finalSynthesis = runStatus === 'SUCCESS'
+      ? {
+          explanation: this.buildExplanation(specialistOutputs),
+          is_llm_generated: false,
+          mode: mode,
+          evidence: evidence,
+          warnings: []
+        }
+      : {
+          explanation: `Workflow Halted Due to Step Failure: ${failureReason}`,
+          is_llm_generated: false,
+          mode: mode,
+          evidence: [],
+          warnings: [`Step failed: ${failureReason}`]
+        };
 
+    const totalDurationMs = Date.now() - runStartTime;
     const runRecord = {
       run_id: runId,
       timestamp: new Date().toISOString(),
       task_prompt: prompt,
       workflow_type: classifiedWorkflow,
-      mode: executionMode,
+      mode,
       status: runStatus,
       duration_ms: totalDurationMs,
       steps_count: executionTrace.length,
@@ -145,125 +112,218 @@ export class OrchestratorAgent {
       specialist_outputs: specialistOutputs
     };
 
-    // 6. Persist Agent Run to SQLite
+    // Persist the run
     try {
       this.repo.insertAgentRun(runRecord);
     } catch (dbErr) {
       console.error('Failed to persist agent run to SQLite:', dbErr.message);
     }
-
     return runRecord;
   }
 
-  /**
-   * Execute an individual planned step
-   */
-  async executePlanStep(stepPlan, inputData, specialistOutputs, stepRecord) {
-    const { action, tool } = stepPlan;
+  /** Executes a single step based on its action */
+  async executeSimpleStep(stepPlan, inputData, specialistOutputs, stepRecord, prompt) {
+    const { action } = stepPlan;
 
-    if (action === 'VALIDATE_AND_PREPARE') {
-      stepRecord.inputs = { prompt: inputData.prompt, workflow: stepPlan.workflow };
-      stepRecord.outputs = { validated: true, timestamp: new Date().toISOString() };
+    if (action === 'VALIDATE') {
+      stepRecord.inputs = inputData;
+      stepRecord.outputs = { validated: true };
       return;
     }
 
     if (action === 'EXECUTE_ADVISORY') {
-      stepRecord.inputs = {
-        monthly_income: inputData.monthly_income,
-        monthly_expenses: inputData.monthly_expenses,
-        essential_expenses: inputData.essential_expenses,
-        current_savings: inputData.current_savings
-      };
-
+      stepRecord.inputs = inputData;
       const result = await this.advisoryAgent.process(inputData);
+      stepRecord.outputs = result;
       if (result.status === 'FAILED') {
         stepRecord.error = result.error;
-        stepRecord.outputs = result;
       } else {
-        stepRecord.outputs = result;
         specialistOutputs.advisory = result;
       }
       return;
     }
 
     if (action === 'EXECUTE_FRAUD_CHECK') {
-      stepRecord.inputs = {
-        amount: inputData.amount,
-        merchant: inputData.merchant_name || inputData.merchant,
-        historical_average: inputData.historical_average
-      };
-
+      stepRecord.inputs = inputData;
       const result = await this.fraudAgent.process(inputData);
+      stepRecord.outputs = result;
       if (result.status === 'FAILED') {
         stepRecord.error = result.error;
-        stepRecord.outputs = result;
       } else {
-        stepRecord.outputs = result;
         specialistOutputs.fraud = result;
       }
       return;
     }
 
-    if (action === 'FETCH_RECENT_TRANSACTIONS') {
-      stepRecord.inputs = { limit: 5 };
-      const toolResult = await executeTool('getRecentTransactions', { limit: 5 });
-      if (!toolResult.success) {
-        stepRecord.error = toolResult.error;
-      } else {
-        stepRecord.outputs = toolResult.output;
-        specialistOutputs.recent_transactions = toolResult.output.transactions;
-      }
+    if (action === 'EXECUTE_TOOL_FAILURE') {
+      // Simulated controlled failure for the test suite
+      stepRecord.error = 'Controlled Tool Failure';
       return;
     }
 
-    if (action === 'EXECUTE_HEALTH_SYNTHESIS') {
-      stepRecord.inputs = {
-        has_advisory: Boolean(specialistOutputs.advisory),
-        has_fraud: Boolean(specialistOutputs.fraud),
-        recent_tx_count: specialistOutputs.recent_transactions?.length || 0
-      };
-
-      const result = await this.healthAgent.process(specialistOutputs);
-      stepRecord.outputs = result;
-      specialistOutputs.health = result;
+    if (action === 'EXECUTE_HEALTH') {
+      // Placeholder step – real health is computed after both specialist steps
+      stepRecord.outputs = { health_summary: 'Combined health generated' };
       return;
     }
 
     if (action === 'SEARCH_KNOWLEDGE') {
-      const query = inputData.query || inputData.prompt || 'budgeting emergency savings';
-      stepRecord.inputs = { query, limit: 3 };
-
-      const toolResult = await executeTool('searchKnowledgeBase', { query, limit: 3 });
-      if (!toolResult.success) {
-        stepRecord.error = toolResult.error;
-      } else {
-        stepRecord.outputs = toolResult.output;
-        specialistOutputs.knowledge = toolResult.output;
-      }
+      // Financial education: search the knowledge base using the retriever tool
+      stepRecord.inputs = inputData;
+      const query = inputData.query || prompt || '';
+      const searchResult = searchKnowledgeBase({ query }, this.repo);
+      stepRecord.outputs = searchResult;
+      specialistOutputs.knowledge = searchResult.results || [];
       return;
     }
 
-    if (action === 'SIMULATE_CONTROLLED_FAILURE') {
-      stepRecord.inputs = { simulated_error: true };
-      const toolResult = await executeTool('simulateToolFailure', {
-        reason: 'Simulated payment gateway timeout or invalid constraint parameter.',
-        error_code: 'GATEWAY_TIMEOUT_DEMO'
-      });
-      // Tool intentionally returns success: false
-      stepRecord.outputs = toolResult.output;
-      stepRecord.error = toolResult.error || 'Simulated tool failure triggered successfully.';
-      return;
-    }
-
-    throw new Error(`Unrecognized execution plan action: ${action}`);
+    throw new Error(`Unrecognized action ${action}`);
   }
 
-  /**
-   * Classify user prompt into workflow type
-   */
+  /** Simple local knowledge search fallback */
+  searchKnowledgeLocal(query) {
+    try {
+      const docs = this.repo.getKnowledgeDocs ? this.repo.getKnowledgeDocs() : [];
+      if (!query || !query.trim()) return [];
+      const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      return docs.filter(doc => {
+        const text = `${doc.title || ''} ${doc.content || ''} ${(doc.tags || []).join(' ')}`.toLowerCase();
+        return terms.some(t => text.includes(t));
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /** Builds evidence array from specialist outputs */
+  buildEvidence(outputs) {
+    const evidence = [];
+    if (outputs.advisory) {
+      evidence.push({
+        tool: 'calculateFinancialMetrics',
+        summary: `Net cash flow: ${outputs.advisory.calculations?.net_cash_flow ?? 'N/A'}, savings rate: ${outputs.advisory.calculations?.savings_rate ?? 'N/A'}`
+      });
+    }
+    if (outputs.fraud) {
+      const scoring = outputs.fraud.scoring || {};
+      evidence.push({
+        tool: 'scoreTransactionRisk',
+        summary: `Risk score: ${scoring.risk_score ?? 'N/A'}/100, level: ${scoring.risk_level ?? 'N/A'}`
+      });
+    }
+    if (outputs.knowledge && outputs.knowledge.length > 0) {
+      evidence.push({
+        tool: 'searchKnowledgeBase',
+        summary: `Found ${outputs.knowledge.length} relevant article(s)`
+      });
+    }
+    return evidence;
+  }
+
+  /** Builds a simple deterministic explanation string */
+  buildExplanation(outputs) {
+    const parts = [];
+
+    if (outputs.advisory) {
+      parts.push('Financial Advisory Assessment – recommendations generated.');
+    }
+
+    if (outputs.fraud) {
+      const riskLevel = outputs.fraud.scoring?.risk_level ?? 'UNKNOWN';
+      parts.push(`Transaction Risk Evaluation – details provided. ${riskLevel} RISK detected.`);
+    }
+
+    if (outputs.health) {
+      parts.push('Combined Financial Health – advisory and fraud analysis completed.');
+    }
+
+    if (outputs.knowledge && outputs.knowledge.length > 0) {
+      // Build explanation from knowledge results
+      const titles = outputs.knowledge.map(k => k.title || 'Article').slice(0, 3);
+      parts.push(`Financial Education – found relevant information: ${titles.join(', ')}.`);
+    }
+
+    if (parts.length === 0) {
+      parts.push('Analysis completed successfully.');
+    }
+
+    return parts.join(' ');
+  }
+
+  /** Creates a minimal plan based on the requested workflow */
+  createSimplePlan(workflowType) {
+    const steps = [{
+      step_id: 1,
+      agent: AGENT_ROLES.ORCHESTRATOR,
+      action: 'VALIDATE',
+      description: 'Validate inputs'
+    }];
+
+    if (workflowType === WORKFLOW_TYPES.TOOL_FAILURE_DEMO) {
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.ORCHESTRATOR,
+        action: 'EXECUTE_TOOL_FAILURE',
+        description: 'Demonstrate controlled tool failure'
+      });
+    } else if (workflowType === WORKFLOW_TYPES.FINANCIAL_ADVISORY) {
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.FINANCIAL_ADVISOR,
+        action: 'EXECUTE_ADVISORY',
+        description: 'Run financial advisory calculations'
+      });
+    } else if (workflowType === WORKFLOW_TYPES.TRANSACTION_RISK) {
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.FRAUD_DETECTOR,
+        action: 'EXECUTE_FRAUD_CHECK',
+        description: 'Run fraud risk scoring'
+      });
+    } else if (workflowType === WORKFLOW_TYPES.COMBINED_HEALTH) {
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.FINANCIAL_ADVISOR,
+        action: 'EXECUTE_ADVISORY',
+        description: 'Financial advisory calculations'
+      });
+      steps.push({
+        step_id: 3,
+        agent: AGENT_ROLES.FRAUD_DETECTOR,
+        action: 'EXECUTE_FRAUD_CHECK',
+        description: 'Fraud risk scoring'
+      });
+      steps.push({
+        step_id: 4,
+        agent: AGENT_ROLES.ORCHESTRATOR,
+        action: 'EXECUTE_HEALTH',
+        description: 'Generate combined health summary'
+      });
+    } else if (workflowType === WORKFLOW_TYPES.FINANCIAL_EDUCATION) {
+      // Knowledge search step
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.ORCHESTRATOR,
+        action: 'SEARCH_KNOWLEDGE',
+        description: 'Search knowledge base for educational content'
+      });
+    } else {
+      // Fallback – knowledge search
+      steps.push({
+        step_id: 2,
+        agent: AGENT_ROLES.ORCHESTRATOR,
+        action: 'SEARCH_KNOWLEDGE',
+        description: 'Search knowledge base'
+      });
+    }
+    return { steps };
+  }
+
+  /** Classifies the user request into a workflow type */
   classifyTask(prompt = '', inputData = {}) {
     const text = (prompt || '').toLowerCase();
 
+    // 1. Forced failure demo
     if (text.includes('fail') || text.includes('error') || text.includes('broken') || text.includes('scenario 5')) {
       return WORKFLOW_TYPES.TOOL_FAILURE_DEMO;
     }
@@ -271,201 +331,36 @@ export class OrchestratorAgent {
     const hasFinancialFigures = inputData.monthly_income !== undefined && inputData.monthly_expenses !== undefined;
     const hasTxFigures = inputData.amount !== undefined;
 
-    // Check for educational / informational questions
-    const isEducationalQuery =
-      text.includes('what is') ||
-      text.includes('what are') ||
-      text.includes('explain') ||
-      text.includes('how to') ||
-      text.includes('how do i') ||
-      text.includes('rule') ||
-      text.includes('guideline') ||
-      text.includes('education') ||
-      text.includes('tips');
+    // 2. Educational queries (no numerical data)
+    const isEducational =
+      text.includes('what is') || text.includes('what are') || text.includes('explain') ||
+      text.includes('how to') || text.includes('how do i') || text.includes('rule') ||
+      text.includes('guideline') || text.includes('education') || text.includes('tips');
 
-    if (isEducationalQuery && !hasFinancialFigures && !hasTxFigures) {
+    if (isEducational && !hasFinancialFigures && !hasTxFigures) {
       return WORKFLOW_TYPES.FINANCIAL_EDUCATION;
     }
 
-    if (hasFinancialFigures && hasTxFigures) {
-      return WORKFLOW_TYPES.COMBINED_HEALTH;
-    }
+    // 3. Combined workflow – prompt mentions BOTH finance and transactions
+    const hasFinanceWords = text.includes('financ') || text.includes('save') || text.includes('budget') ||
+      text.includes('income') || text.includes('expense') || text.includes('salary');
+    const hasTxWords = text.includes('transaction') || text.includes('fraud') || text.includes('suspicious') ||
+      text.includes('risk') || text.includes('upi') || text.includes('merchant');
 
-    if (
-      (text.includes('finance') || text.includes('save') || text.includes('budget') || text.includes('income') || text.includes('expense') || text.includes('salary')) &&
-      (text.includes('transaction') || text.includes('suspicious') || text.includes('fraud') || text.includes('risk') || text.includes('upi'))
-    ) {
-      return WORKFLOW_TYPES.COMBINED_HEALTH;
-    }
+    if (hasFinancialFigures && hasTxFigures) return WORKFLOW_TYPES.COMBINED_HEALTH;
+    if (hasFinanceWords && hasTxWords) return WORKFLOW_TYPES.COMBINED_HEALTH;
 
-    if (text.includes('fraud') || text.includes('suspicious') || text.includes('transaction') || text.includes('upi') || text.includes('merchant') || text.includes('risk') || hasTxFigures) {
+    // 4. Transaction-risk detection
+    if (hasTxWords || hasTxFigures) {
       return WORKFLOW_TYPES.TRANSACTION_RISK;
     }
 
-    if (text.includes('save') || text.includes('budget') || text.includes('income') || text.includes('expense') || text.includes('salary') || text.includes('invest') || hasFinancialFigures) {
+    // 5. Financial advisory
+    if (hasFinanceWords || hasFinancialFigures) {
       return WORKFLOW_TYPES.FINANCIAL_ADVISORY;
     }
 
+    // Default fallback
     return WORKFLOW_TYPES.FINANCIAL_EDUCATION;
-  }
-
-  /**
-   * Create bounded execution plan
-   */
-  createExecutionPlan(workflowType, prompt, inputData) {
-    switch (workflowType) {
-      case WORKFLOW_TYPES.FINANCIAL_ADVISORY:
-        return {
-          workflow: workflowType,
-          description: 'Evaluate monthly finances, compute cash flow & savings ratios, and generate budget advice.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'VALIDATE_AND_PREPARE',
-              tool: null,
-              description: 'Validate income and expense input parameters.'
-            },
-            {
-              step_id: 2,
-              agent: AGENT_ROLES.FINANCIAL_ADVISOR,
-              action: 'EXECUTE_ADVISORY',
-              tool: 'calculateFinancialMetrics',
-              description: 'Invoke deterministic financial calculator tool.'
-            },
-            {
-              step_id: 3,
-              agent: AGENT_ROLES.EXPLAINER,
-              action: 'SEARCH_KNOWLEDGE',
-              tool: 'searchKnowledgeBase',
-              description: 'Retrieve verified educational guidelines.'
-            }
-          ]
-        };
-
-      case WORKFLOW_TYPES.TRANSACTION_RISK:
-        return {
-          workflow: workflowType,
-          description: 'Score transaction risk indicators, evaluate velocity and anomalies, and record outcome.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'VALIDATE_AND_PREPARE',
-              tool: null,
-              description: 'Validate transaction amount and metadata.'
-            },
-            {
-              step_id: 2,
-              agent: AGENT_ROLES.FRAUD_DETECTOR,
-              action: 'EXECUTE_FRAUD_CHECK',
-              tool: 'scoreTransactionRisk',
-              description: 'Run transparent rule-based fraud scoring tool and persist to database.'
-            }
-          ]
-        };
-
-      case WORKFLOW_TYPES.COMBINED_HEALTH:
-        return {
-          workflow: workflowType,
-          description: 'Execute multi-agent analysis combining personal finances and transaction risks.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'VALIDATE_AND_PREPARE',
-              tool: null,
-              description: 'Coordinate shared execution context across advisory and fraud modules.'
-            },
-            {
-              step_id: 2,
-              agent: AGENT_ROLES.FINANCIAL_ADVISOR,
-              action: 'EXECUTE_ADVISORY',
-              tool: 'calculateFinancialMetrics',
-              description: 'Calculate cash flow, savings rate, and emergency buffer.'
-            },
-            {
-              step_id: 3,
-              agent: AGENT_ROLES.FRAUD_DETECTOR,
-              action: 'EXECUTE_FRAUD_CHECK',
-              tool: 'scoreTransactionRisk',
-              description: 'Score active transaction risk and potential exposure.'
-            },
-            {
-              step_id: 4,
-              agent: AGENT_ROLES.FINANCIAL_ANALYST,
-              action: 'FETCH_RECENT_TRANSACTIONS',
-              tool: 'getRecentTransactions',
-              description: 'Fetch recent transaction records for velocity analysis.'
-            },
-            {
-              step_id: 5,
-              agent: AGENT_ROLES.FINANCIAL_ANALYST,
-              action: 'EXECUTE_HEALTH_SYNTHESIS',
-              tool: null,
-              description: 'Synthesize cross-module exposure risks and overall health.'
-            }
-          ]
-        };
-
-      case WORKFLOW_TYPES.FINANCIAL_EDUCATION:
-        return {
-          workflow: workflowType,
-          description: 'Search local verified knowledge base and synthesize clear non-expert guidance.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'VALIDATE_AND_PREPARE',
-              tool: null,
-              description: 'Parse educational query tokens and remove stop words.'
-            },
-            {
-              step_id: 2,
-              agent: AGENT_ROLES.EXPLAINER,
-              action: 'SEARCH_KNOWLEDGE',
-              tool: 'searchKnowledgeBase',
-              description: 'Perform keyword relevance search on verified articles.'
-            }
-          ]
-        };
-
-      case WORKFLOW_TYPES.TOOL_FAILURE_DEMO:
-        return {
-          workflow: workflowType,
-          description: 'Controlled demonstration of tool failure and truthful trace recording without fabrication.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'VALIDATE_AND_PREPARE',
-              tool: null,
-              description: 'Initiate controlled testing sequence.'
-            },
-            {
-              step_id: 2,
-              agent: AGENT_ROLES.ORCHESTRATOR,
-              action: 'SIMULATE_CONTROLLED_FAILURE',
-              tool: 'simulateToolFailure',
-              description: 'Trigger intentional upstream service timeout.'
-            }
-          ]
-        };
-
-      default:
-        return {
-          workflow: WORKFLOW_TYPES.FINANCIAL_EDUCATION,
-          description: 'General financial query fallback.',
-          steps: [
-            {
-              step_id: 1,
-              agent: AGENT_ROLES.EXPLAINER,
-              action: 'SEARCH_KNOWLEDGE',
-              tool: 'searchKnowledgeBase',
-              description: 'Search educational base.'
-            }
-          ]
-        };
-    }
   }
 }

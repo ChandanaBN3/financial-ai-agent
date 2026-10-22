@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
 
   res.json({
     status: 'HEALTHY',
-    project: '418 – Agentic AI-Based Smart Financial Advisory and Fraud Detection System',
+    project: 'MoneyWise – Smart Financial Advisory and Payment Safety System',
     timestamp: new Date().toISOString(),
     uptime_seconds: Math.round(process.uptime()),
     database: {

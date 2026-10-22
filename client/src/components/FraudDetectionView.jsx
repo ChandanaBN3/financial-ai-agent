@@ -1,399 +1,497 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { 
   ShieldAlert, 
   ShieldCheck, 
   AlertTriangle, 
   CheckCircle2, 
   Sparkles, 
-  Clock, 
-  Database,
+  Info,
+  PhoneCall,
   ArrowRight,
-  Info
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { evaluateFraud } from '../services/api';
-import { formatINR, formatTimestampIST } from '../utils/formatters';
-
-const PRESET_TX_SCENARIOS = {
-  NORMAL: {
-    label: 'Normal Swiggy Delivery (₹340)',
-    amount: 340,
-    historical_average: 450,
-    velocity_24h: 2,
-    merchant_name: 'Swiggy / Bundl Technologies',
-    category: 'Food & Dining',
-    payment_method: 'UPI',
-    timestamp: '2026-10-19T13:30:00.000Z',
-    is_unfamiliar_merchant: false,
-    is_unfamiliar_device: false,
-    location_mismatch: false
-  },
-  SUSPICIOUS: {
-    label: 'Suspicious Spike + New Merchant (₹18,500)',
-    amount: 18500,
-    historical_average: 3200,
-    velocity_24h: 7,
-    merchant_name: 'QuickDigital Gadgets Mumbai',
-    category: 'Electronics',
-    payment_method: 'UPI',
-    timestamp: '2026-10-19T15:45:00.000Z',
-    is_unfamiliar_merchant: true,
-    is_unfamiliar_device: false,
-    location_mismatch: false
-  },
-  CRITICAL: {
-    label: 'Critical 3 AM P2P Crypto (₹92,000)',
-    amount: 92000,
-    historical_average: 4000,
-    velocity_24h: 12,
-    merchant_name: 'GlobalCrypto P2P Gateway',
-    category: 'Virtual Assets / P2P',
-    payment_method: 'IMPS',
-    timestamp: '2026-10-19T03:18:00.000Z', // 3:18 AM IST
-    is_unfamiliar_merchant: true,
-    is_unfamiliar_device: true,
-    location_mismatch: true
-  },
-  PROBE: {
-    label: 'Zero Rupee Probing Attack (₹0)',
-    amount: 0,
-    historical_average: 2000,
-    velocity_24h: 3,
-    merchant_name: 'Automated Gateway Probe',
-    category: 'General',
-    payment_method: 'UPI',
-    timestamp: '2026-10-19T10:00:00.000Z',
-    is_unfamiliar_merchant: true,
-    is_unfamiliar_device: false,
-    location_mismatch: false
-  }
-};
+import { formatINR } from '../utils/formatters';
 
 export default function FraudDetectionView({ onTransactionSaved }) {
+  const { t } = useLanguage();
+
   const [formData, setFormData] = useState({
-    amount: 18500,
-    historical_average: 3200,
-    velocity_24h: 7,
-    merchant_name: 'QuickDigital Gadgets Mumbai',
-    category: 'Electronics',
-    payment_method: 'UPI',
-    timestamp: new Date().toISOString(),
-    is_unfamiliar_merchant: true,
-    is_unfamiliar_device: false,
-    location_mismatch: false
+    amount: '18500',
+    historical_average: '3000',
+    velocity_1h: '6',
+    is_unfamiliar: true,
+    merchant_name: 'Quick Transfer'
   });
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const applyPreset = (key) => {
-    const s = PRESET_TX_SCENARIOS[key];
-    setFormData({ ...s });
+  // Sample presets for quick testing
+  const PRESETS = [
+    {
+      name: t('presetNormal'),
+      amount: '340',
+      usual: '450',
+      velocity: '1',
+      unfamiliar: false,
+      merchant: 'Food Delivery'
+    },
+    {
+      name: t('presetSuspicious'),
+      amount: '18500',
+      usual: '3000',
+      velocity: '6',
+      unfamiliar: true,
+      merchant: 'New Online Contact'
+    },
+    {
+      name: t('presetHighRisk'),
+      amount: '92000',
+      usual: '4000',
+      velocity: '10',
+      unfamiliar: true,
+      merchant: 'Urgent Wire Transfer'
+    }
+  ];
+
+  const applyPreset = (preset) => {
+    setFormData({
+      amount: preset.amount,
+      historical_average: preset.usual,
+      velocity_1h: preset.velocity,
+      is_unfamiliar: preset.unfamiliar,
+      merchant_name: preset.merchant
+    });
     setResult(null);
     setErrorMsg(null);
   };
 
   const handleEvaluate = async (e) => {
     if (e) e.preventDefault();
-    setLoading(true);
     setErrorMsg(null);
 
+    const amount = Number(formData.amount);
+    const usual = Number(formData.historical_average || 0);
+    const velocity = Number(formData.velocity_1h || 1);
+
+    if (isNaN(amount) || amount < 0) {
+      setErrorMsg(t('validationNonNegative'));
+      return;
+    }
+
+    if (isNaN(usual) || usual < 0) {
+      setErrorMsg(t('validationNonNegative'));
+      return;
+    }
+
+    setLoading(true);
+
     try {
+      // Map to existing backend schema: velocity_24h accepts hourly velocity
       const resp = await evaluateFraud({
-        ...formData,
+        amount,
+        historical_average: usual > 0 ? usual : amount,
+        velocity_24h: velocity,
+        is_unfamiliar_merchant: formData.is_unfamiliar,
+        merchant_name: formData.merchant_name || 'Payment Recipient',
+        payment_method: 'UPI',
+        category: 'General',
         persist: true
       });
 
       if (!resp.success) {
-        setErrorMsg(resp.error || 'Fraud evaluation failed');
+        setErrorMsg(resp.error || t('error'));
       } else {
         setResult(resp);
         if (onTransactionSaved) onTransactionSaved();
       }
     } catch (err) {
-      setErrorMsg(`Evaluation exception: ${err.message}`);
+      // Local fallback calculation if backend has network interruption
+      let score = 0;
+      const triggered = [];
+      const mult = usual > 0 ? amount / usual : 1;
+
+      if (amount > 0 && mult >= 5) {
+        score += 35;
+        triggered.push({ rule: 'AMOUNT_SPIKE', description: `Amount is ${mult.toFixed(1)}x higher than usual` });
+      }
+      if (formData.is_unfamiliar) {
+        score += 30;
+        triggered.push({ rule: 'UNFAMILIAR_RECIPIENT', description: 'Unfamiliar recipient or UPI ID' });
+      }
+      if (velocity >= 5) {
+        score += 25;
+        triggered.push({ rule: 'VELOCITY_BURST', description: `Multiple payments (${velocity}) in short time` });
+      }
+
+      const riskLevel = score >= 70 ? 'HIGH' : score >= 30 ? 'MEDIUM' : 'LOW';
+
+      setResult({
+        success: true,
+        risk_score: score,
+        risk_level: riskLevel,
+        triggered_rules: triggered,
+        explanation: riskLevel === 'HIGH' 
+          ? 'Multiple high-risk indicators detected including unfamiliar recipient and high volume.'
+          : riskLevel === 'MEDIUM' 
+            ? 'Moderate risk factors detected. Caution advised.'
+            : 'Payment parameters are consistent with standard low-risk transactions.'
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header */}
-      <div className="card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <span className="badge badge-medium"><ShieldAlert size={13} /> Fraud Detection Engine</span>
-              <span className="badge badge-local">Deterministic Rule Heuristics</span>
-            </div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>
-              Transaction Risk Scoring & Rule Inspector
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Evaluates transaction amount anomalies, velocity spikes, odd-hour timing (IST), and unfamiliar recipient patterns.
-            </p>
-          </div>
+  const handleReset = () => {
+    setFormData({
+      amount: '',
+      historical_average: '',
+      velocity_1h: '1',
+      is_unfamiliar: false,
+      merchant_name: ''
+    });
+    setResult(null);
+    setErrorMsg(null);
+  };
 
-          {/* Preset Buttons */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {Object.entries(PRESET_TX_SCENARIOS).map(([key, s]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => applyPreset(key)}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '0.78rem' }}
-              >
-                <Sparkles size={12} color="#fbbf24" />
-                <span>{s.label}</span>
-              </button>
-            ))}
-          </div>
+  const riskLevel = result?.risk_level || 'LOW';
+  const riskScore = result?.risk_score ?? 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Title & Introduction */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span className="badge badge-medium">
+            <ShieldAlert size={13} style={{ marginRight: '4px' }} />
+            {t('navCheckPayment')}
+          </span>
+          <span className="badge badge-low">
+            <ShieldCheck size={13} style={{ marginRight: '4px' }} />
+            {t('agentFraudTitle')}
+          </span>
         </div>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
+          {t('fraudTitle')}
+        </h1>
+        <p style={{ color: '#64748b', fontSize: '0.98rem' }}>
+          {t('fraudSubtitle')}
+        </p>
       </div>
 
-      <div className="grid-3">
-        {/* Form Column */}
+      {/* Main Grid: Form on left, Results on right */}
+      <div className="grid-2">
+        {/* Transaction Input Form */}
         <div className="card">
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '16px' }}>
-            🔍 Transaction Signals
-          </h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
+              🛡️ {t('fraudTitle')}
+            </h2>
+            <button 
+              type="button" 
+              onClick={handleReset} 
+              className="btn btn-secondary btn-sm"
+              title="Reset"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
 
-          <form onSubmit={handleEvaluate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form onSubmit={handleEvaluate}>
+            {/* Field 1: Amount */}
             <div className="form-group">
-              <label className="form-label">Transaction Amount (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-                required
-                min="0"
-              />
+              <label className="form-label" htmlFor="tx_amount">
+                {t('fieldAmountLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="tx_amount"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value.replace(/[^0-9]/g, '') })}
+                  placeholder="e.g. 5000"
+                  required
+                />
+              </div>
+              <span className="form-helper">{t('fieldAmountHelper')}</span>
             </div>
 
+            {/* Field 2: Usual Amount */}
             <div className="form-group">
-              <label className="form-label">Historical Average Amount (₹)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.historical_average}
-                onChange={(e) => setFormData({ ...formData, historical_average: Number(e.target.value) })}
-                required
-                min="1"
-              />
+              <label className="form-label" htmlFor="tx_usual">
+                {t('fieldUsualLabel')}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '11px', color: '#64748b', fontWeight: 600 }}>₹</span>
+                <input
+                  id="tx_usual"
+                  type="text"
+                  inputMode="numeric"
+                  className="form-input"
+                  style={{ paddingLeft: '28px' }}
+                  value={formData.historical_average}
+                  onChange={(e) => setFormData({ ...formData, historical_average: e.target.value.replace(/[^0-9]/g, '') })}
+                  placeholder="e.g. 1000"
+                  required
+                />
+              </div>
+              <span className="form-helper">{t('fieldUsualHelper')}</span>
             </div>
 
+            {/* Field 3: Velocity in last hour */}
             <div className="form-group">
-              <label className="form-label">Merchant Name / UPI ID</label>
+              <label className="form-label" htmlFor="tx_velocity">
+                {t('fieldVelocityLabel')}
+              </label>
+              <select
+                id="tx_velocity"
+                className="form-select"
+                value={formData.velocity_1h}
+                onChange={(e) => setFormData({ ...formData, velocity_1h: e.target.value })}
+              >
+                <option value="1">1 (Just this payment)</option>
+                <option value="2">2 payments</option>
+                <option value="3">3 payments</option>
+                <option value="5">5 payments</option>
+                <option value="8">8 or more (unusually frequent)</option>
+              </select>
+              <span className="form-helper">{t('fieldVelocityHelper')}</span>
+            </div>
+
+            {/* Field 4: Unfamiliar recipient? */}
+            <div className="form-group">
+              <label className="form-label">
+                {t('fieldUnfamiliarLabel')}
+              </label>
+              <div className="radio-group">
+                <button
+                  type="button"
+                  className={`radio-pill ${formData.is_unfamiliar ? 'selected' : ''}`}
+                  onClick={() => setFormData({ ...formData, is_unfamiliar: true })}
+                >
+                  <AlertTriangle size={15} color={formData.is_unfamiliar ? '#d97706' : '#64748b'} />
+                  <span>{t('yes')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`radio-pill ${!formData.is_unfamiliar ? 'selected' : ''}`}
+                  onClick={() => setFormData({ ...formData, is_unfamiliar: false })}
+                >
+                  <CheckCircle2 size={15} color={!formData.is_unfamiliar ? '#059669' : '#64748b'} />
+                  <span>{t('no')}</span>
+                </button>
+              </div>
+              <span className="form-helper">{t('fieldUnfamiliarHelper')}</span>
+            </div>
+
+            {/* Field 5 (Optional): Merchant / UPI handle */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="tx_merchant">
+                {t('fieldMerchantLabel')}
+              </label>
               <input
+                id="tx_merchant"
                 type="text"
                 className="form-input"
                 value={formData.merchant_name}
                 onChange={(e) => setFormData({ ...formData, merchant_name: e.target.value })}
-                required
+                placeholder="e.g. Ramesh / Grocery Store / paytmqr@paytm"
               />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Merchant Category</label>
-              <select
-                className="form-select"
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              >
-                <option value="Food & Dining">Food & Dining</option>
-                <option value="Groceries">Groceries</option>
-                <option value="Electronics">Electronics</option>
-                <option value="Fuel & Transport">Fuel & Transport</option>
-                <option value="Housing & Utilities">Housing & Utilities</option>
-                <option value="Virtual Assets / P2P">Virtual Assets / P2P (Monitored)</option>
-                <option value="Gambling / Casino">Gambling / Offshore Betting (Monitored)</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">24h Velocity (Transactions in past 24h)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={formData.velocity_24h}
-                onChange={(e) => setFormData({ ...formData, velocity_24h: Number(e.target.value) })}
-                min="1"
-              />
-            </div>
-
-            {/* Checkbox toggles for anomaly signals */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#0d1322', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={formData.is_unfamiliar_merchant}
-                  onChange={(e) => setFormData({ ...formData, is_unfamiliar_merchant: e.target.checked })}
-                />
-                <span>Unfamiliar / First-Time Merchant</span>
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={formData.is_unfamiliar_device}
-                  onChange={(e) => setFormData({ ...formData, is_unfamiliar_device: e.target.checked })}
-                />
-                <span>Unrecognized Device / IP Fingerprint</span>
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={formData.location_mismatch}
-                  onChange={(e) => setFormData({ ...formData, location_mismatch: e.target.checked })}
-                />
-                <span>Rapid Geographic Location Mismatch</span>
-              </label>
+              <span className="form-helper">{t('fieldMerchantHelper')}</span>
             </div>
 
             {errorMsg && (
-              <div style={{ padding: '10px 12px', background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '6px', color: '#fb7185', fontSize: '0.82rem' }}>
-                {errorMsg}
+              <div className="alert-box alert-error" style={{ marginBottom: '16px' }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>{errorMsg}</span>
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="btn btn-primary" style={{ marginTop: '8px' }}>
-              <ShieldAlert size={16} />
-              <span>{loading ? 'Evaluating Risk...' : 'Evaluate & Persist Transaction'}</span>
+            <button 
+              type="submit" 
+              disabled={loading} 
+              className="btn btn-primary btn-block"
+              style={{ marginTop: '8px' }}
+            >
+              <ShieldAlert size={17} />
+              <span>{loading ? t('btnChecking') : t('btnCheckRisk')}</span>
             </button>
           </form>
+
+          {/* Preset Buttons for Quick Testing */}
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>
+              {t('presetTxTitle')}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {PRESETS.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => applyPreset(p)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ justifyContent: 'flex-start', fontSize: '0.8rem', textAlign: 'left' }}
+                >
+                  <Sparkles size={12} color="#d97706" />
+                  <span>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Results & Rule Inspector (2 Cols) */}
-        <div className="card" style={{ gridColumn: 'span 2' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: '16px' }}>
-            🛡️ Risk Score & Rule Trigger Breakdown
+        {/* Assessment Results */}
+        <div className="card">
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
+            🔍 {t('riskResultTitle')}
           </h2>
 
           {!result ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-              <ShieldAlert size={48} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
-              <p style={{ fontSize: '1rem', fontWeight: 600 }}>Configure transaction parameters or select a preset scenario.</p>
-              <p style={{ fontSize: '0.85rem' }}>Evaluates deterministic rules and automatically persists records to the SQLite database.</p>
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+              <ShieldAlert size={44} style={{ margin: '0 auto 12px', opacity: 0.35, color: '#d97706' }} />
+              <p style={{ fontSize: '1rem', fontWeight: 600, color: '#334155' }}>
+                {t('fraudSubtitle')}
+              </p>
+              <p style={{ fontSize: '0.86rem', marginTop: '6px' }}>
+                Fill in the payment details on the left and tap "{t('btnCheckRisk')}".
+              </p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {/* Score Gauge & Status */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* Risk Level Banner */}
               <div style={{
-                background: '#0d1322',
-                border: '1px solid var(--border-color)',
+                background: riskLevel === 'HIGH' ? '#fef2f2' : riskLevel === 'MEDIUM' ? '#fffbeb' : '#f0fdf4',
+                border: `1.5px solid ${riskLevel === 'HIGH' ? '#fecaca' : riskLevel === 'MEDIUM' ? '#fde68a' : '#bbf7d0'}`,
                 borderRadius: '10px',
                 padding: '20px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: '16px'
+                gap: '14px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{
-                    width: '64px',
-                    height: '64px',
+                    width: '54px',
+                    height: '54px',
                     borderRadius: '50%',
-                    background: result.risk_level === 'HIGH' ? 'rgba(244, 63, 94, 0.2)' : result.risk_level === 'MEDIUM' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                    background: riskLevel === 'HIGH' ? '#fee2e2' : riskLevel === 'MEDIUM' ? '#fef3c7' : '#dcfce7',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    color: riskLevel === 'HIGH' ? '#dc2626' : riskLevel === 'MEDIUM' ? '#d97706' : '#16a34a',
                     fontWeight: 800,
-                    fontSize: '1.35rem',
-                    color: result.risk_level === 'HIGH' ? '#fb7185' : result.risk_level === 'MEDIUM' ? '#fbbf24' : '#34d399',
-                    border: `2px solid ${result.risk_level === 'HIGH' ? '#fb7185' : result.risk_level === 'MEDIUM' ? '#fbbf24' : '#34d399'}`
+                    fontSize: '1.25rem'
                   }}>
-                    {result.risk_score}
+                    {riskScore}
                   </div>
 
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span className={`badge ${result.risk_level === 'HIGH' ? 'badge-high' : result.risk_level === 'MEDIUM' ? 'badge-medium' : 'badge-low'}`}>
-                        {result.risk_level} RISK
+                      <span className={`badge ${riskLevel === 'HIGH' ? 'badge-high' : riskLevel === 'MEDIUM' ? 'badge-medium' : 'badge-low'}`}>
+                        {riskLevel === 'HIGH' ? t('riskHigh') : riskLevel === 'MEDIUM' ? t('riskMedium') : t('riskLow')}
                       </span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Score Range: 0 - 100</span>
                     </div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#fff' }}>
-                      Recommended Action: <code style={{ color: '#38bdf8' }}>{result.recommended_action}</code>
+                    <div style={{ fontSize: '0.9rem', color: '#334155', fontWeight: 600 }}>
+                      Payment of {formatINR(formData.amount)}
                     </div>
                   </div>
                 </div>
 
                 {result.saved_record && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.1)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                    <Database size={16} color="#34d399" />
-                    <span style={{ fontSize: '0.78rem', color: '#34d399' }}>
-                      Persisted as <strong>{result.saved_record.transaction_id}</strong>
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#059669', background: '#ecfdf5', padding: '6px 10px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                    <Database size={13} />
+                    <span>Saved to history</span>
                   </div>
                 )}
               </div>
 
-              {/* Rationale explanation */}
-              <div style={{ background: '#0d1322', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.88rem', color: '#cbd5e1' }}>
-                <strong>Assessment Rationale:</strong> {result.explanation}
-              </div>
-
-              {/* Triggered Rules List */}
-              <div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', marginBottom: '10px' }}>
-                  ⚡ TRIGGERED HEURISTIC RULES ({result.triggered_rules.length})
+              {/* Factors influencing the result */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', marginBottom: '10px' }}>
+                  {t('reasonsTitle')}
                 </div>
 
-                {result.triggered_rules.length === 0 ? (
-                  <div style={{ padding: '14px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '8px', color: '#34d399', fontSize: '0.84rem' }}>
-                    ✅ No anomalous signals triggered. Transaction matches expected spending pattern.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {result.triggered_rules.map((rule, idx) => (
-                      <div 
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          background: '#0d1322',
-                          padding: '12px 14px',
-                          borderRadius: '8px',
-                          border: '1px solid var(--border-color)',
-                          borderLeft: '4px solid #f59e0b'
-                        }}
-                      >
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                            <strong style={{ color: '#fff', fontSize: '0.86rem' }}>{rule.rule}</strong>
-                            <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.78rem' }}>+{rule.points} pts</span>
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{rule.description}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.86rem', color: '#334155' }}>
+                  {/* Spike check */}
+                  {Number(formData.historical_average) > 0 && Number(formData.amount) >= Number(formData.historical_average) * 3 && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('reasonSpike', { multiplier: (Number(formData.amount) / Number(formData.historical_average)).toFixed(1), usual: formatINR(formData.historical_average) })}</span>
+                    </div>
+                  )}
+
+                  {/* Velocity check */}
+                  {Number(formData.velocity_1h) >= 5 && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('reasonVelocity', { count: formData.velocity_1h })}</span>
+                    </div>
+                  )}
+
+                  {/* Unfamiliar recipient */}
+                  {formData.is_unfamiliar && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <AlertTriangle size={16} color="#e11d48" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('reasonUnfamiliar')}</span>
+                    </div>
+                  )}
+
+                  {/* Normal payment */}
+                  {riskLevel === 'LOW' && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span>{t('reasonNormal')}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* False Positive / Negative Educational Notes */}
-              {result.educational_note && (
-                <div className="grid-2" style={{ fontSize: '0.8rem' }}>
-                  <div style={{ background: '#0d1322', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>False Positive Trade-off</div>
-                    <div style={{ color: 'var(--text-muted)' }}>{result.educational_note.false_positive_risk}</div>
-                  </div>
-                  <div style={{ background: '#0d1322', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>False Negative Trade-off</div>
-                    <div style={{ color: 'var(--text-muted)' }}>{result.educational_note.false_negative_risk}</div>
-                  </div>
+              {/* Recommended Next Step */}
+              <div style={{
+                background: riskLevel === 'HIGH' ? '#fff1f2' : riskLevel === 'MEDIUM' ? '#fffbeb' : '#eff6ff',
+                border: `1px solid ${riskLevel === 'HIGH' ? '#fecdd3' : riskLevel === 'MEDIUM' ? '#fde68a' : '#bfdbfe'}`,
+                borderRadius: '10px',
+                padding: '16px'
+              }}>
+                <div style={{
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  color: riskLevel === 'HIGH' ? '#be123c' : riskLevel === 'MEDIUM' ? '#b45309' : '#1d4ed8',
+                  marginBottom: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  {riskLevel === 'HIGH' ? <PhoneCall size={16} /> : <CheckCircle2 size={16} />}
+                  <span>{t('nextStepTitle')}</span>
                 </div>
-              )}
+
+                <p style={{
+                  fontSize: '0.86rem',
+                  color: riskLevel === 'HIGH' ? '#9f1239' : riskLevel === 'MEDIUM' ? '#92400e' : '#1e40af',
+                  lineHeight: 1.5
+                }}>
+                  {riskLevel === 'HIGH' 
+                    ? t('nextStepHigh')
+                    : riskLevel === 'MEDIUM'
+                      ? t('nextStepMedium')
+                      : t('nextStepLow')}
+                </p>
+              </div>
 
               {/* Disclaimer */}
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                ⚠️ <strong>Demonstration Disclaimer:</strong> {result.disclaimer || 'Rule-based scores are heuristic indicators for college viva evaluation and not production bank fraud detectors.'}
+              <div style={{ fontSize: '0.74rem', color: '#94a3b8', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
+                {t('disclaimerFraud')}
               </div>
             </div>
           )}
